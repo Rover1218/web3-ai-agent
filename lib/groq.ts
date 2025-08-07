@@ -4,6 +4,24 @@ import { ResearchResult, DataTableRow } from './types';
 // Initialize without explicitly setting the API key, it will use GROQ_API_KEY env var automatically
 const groq = new Groq();
 
+// Available model fallbacks in order of preference
+const MODEL_FALLBACKS = [
+  'llama-3.3-70b-versatile',  // Primary model
+  'llama-3.2-70b-versatile',  // Fallback 1
+  'gemma-7b-it',              // Fallback 2
+  'mistral-7b-instruct',      // Fallback 3
+  'mixtral-8x7b-32768'        // Fallback 4
+];
+
+// Function to select the appropriate model based on retry count
+function getCurrentModel(retryCount: number = 0): string {
+  // If retryCount is beyond our available models, use the last one
+  const index = Math.min(retryCount, MODEL_FALLBACKS.length - 1);
+  const model = MODEL_FALLBACKS[index];
+  console.log(`Using model: ${model} (retry attempt: ${retryCount})`);
+  return model;
+}
+
 function detectIntents(query: string) {
   const q = query.toLowerCase();
   
@@ -430,7 +448,7 @@ Current time: ${requestTime}`,
                   content: `${prompt}\n\nRequest ID: ${requestId}\nTimestamp: ${requestTime}`,
                 },
               ],
-              model: 'llama-3.3-70b-versatile',
+              model: getCurrentModel(retryCount),
               temperature: 0.7, // Slightly lower temperature for better JSON formatting
               max_tokens: 2500,
             });
@@ -441,9 +459,10 @@ Current time: ${requestTime}`,
             lastError = retryError;
             const errorMessage = retryError instanceof Error ? retryError.message : 'Unknown error';
             const isCapacityError = errorMessage.includes('over capacity');
+            const isRateLimitError = errorMessage.includes('rate_limit_exceeded') || errorMessage.includes('Rate limit reached');
             
             // Log the error
-            console.log(`Groq API error (${isCapacityError ? 'capacity issue' : 'general error'}): ${errorMessage}`);
+            console.log(`Groq API error (${isRateLimitError ? 'rate limit' : (isCapacityError ? 'capacity issue' : 'general error')}): ${errorMessage}`);
             
             if (retryCount >= maxRetries) {
               throw retryError; // Re-throw if we've exhausted retries
@@ -451,7 +470,7 @@ Current time: ${requestTime}`,
             
             // Calculate backoff delay with exponential increase and some randomness (jitter)
             retryDelay = retryDelay * 2 * (0.8 + Math.random() * 0.4); // Add 20% jitter
-            console.log(`Retrying in ${Math.round(retryDelay)}ms...`);
+            console.log(`Retrying in ${Math.round(retryDelay)}ms with model fallback...`);
             await new Promise(resolve => setTimeout(resolve, retryDelay));
             retryCount++;
           }
@@ -461,8 +480,11 @@ Current time: ${requestTime}`,
         
         // If this was a capacity error, set the environment flag to skip API calls temporarily
         const errorMessage = apiError instanceof Error ? apiError.message : 'Unknown error';
-        if (errorMessage.includes('over capacity') || errorMessage.includes('503')) {
-          console.log('⚠️ Groq API is over capacity, enabling fallback mode for 5 minutes');
+        const isRateLimitError = errorMessage.includes('rate_limit_exceeded') || errorMessage.includes('Rate limit reached');
+        const isCapacityError = errorMessage.includes('over capacity') || errorMessage.includes('503');
+        
+        if (isCapacityError || isRateLimitError) {
+          console.log(`⚠️ Groq API is ${isRateLimitError ? 'rate limited' : 'over capacity'}, enabling fallback mode for 5 minutes`);
           process.env.SKIP_GROQ_API = 'true';
           
           // Create a timeout to reset the flag after 5 minutes
@@ -840,14 +862,18 @@ Provide a concise, professional analysis focusing on:
               content: prompt,
             },
           ],
-          model: 'llama-3.3-70b-versatile',
+          model: getCurrentModel(retryCount),
           temperature: 0.3,
           max_tokens: 1000,
         });
 
         return completion.choices[0]?.message?.content || 'Unable to generate insights at this time.';
       } catch (retryError) {
-        console.error(`Groq API error (attempt ${retryCount + 1}/${maxRetries + 1}):`, retryError);
+        const errorMessage = retryError instanceof Error ? retryError.message : 'Unknown error';
+        const isCapacityError = errorMessage.includes('over capacity');
+        const isRateLimitError = errorMessage.includes('rate_limit_exceeded') || errorMessage.includes('Rate limit reached');
+        
+        console.error(`Groq API error (${isRateLimitError ? 'rate limit' : (isCapacityError ? 'capacity issue' : 'general error')}) - attempt ${retryCount + 1}/${maxRetries + 1}:`, retryError);
         
         if (retryCount >= maxRetries) {
           throw retryError; // Re-throw if we've exhausted retries
@@ -855,7 +881,7 @@ Provide a concise, professional analysis focusing on:
         
         // Calculate backoff delay with exponential increase
         retryDelay *= 2;
-        console.log(`Retrying in ${retryDelay}ms...`);
+        console.log(`Retrying in ${retryDelay}ms with model fallback...`);
         await new Promise(resolve => setTimeout(resolve, retryDelay));
         retryCount++;
       }

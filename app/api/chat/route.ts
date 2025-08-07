@@ -21,11 +21,15 @@ async function retryWithExponentialBackoff<T>(
       return await fn();
     } catch (error: any) {
       retries++;
-      if (retries > maxRetries || !error.status || error.status !== 503) {
+      // Check for both 503 and rate limit errors
+      const isCapacityError = error.status === 503;
+      const isRateLimitError = error.error?.error?.code === 'rate_limit_exceeded';
+      
+      if (retries > maxRetries || (!isCapacityError && !isRateLimitError)) {
         throw error;
       }
       
-      console.log(`Retrying due to 503 error (retry ${retries}/${maxRetries}). Waiting ${delay}ms...`);
+      console.log(`Retrying due to ${isRateLimitError ? 'rate limit' : 'capacity'} error (retry ${retries}/${maxRetries}). Waiting ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
       delay *= factor; // Exponential backoff
     }
@@ -98,12 +102,16 @@ export async function POST(request: NextRequest) {
         console.error(`Error with model ${model}:`, err);
         lastError = err;
         
-        // If it's not a capacity error or we've tried all models, don't try other models
-        if (!err.status || err.status !== 503) {
+        // Check if it's a rate limit or capacity error
+        const isCapacityError = err.status === 503;
+        const isRateLimitError = err.error?.error?.code === 'rate_limit_exceeded';
+        
+        // If it's not a capacity/rate limit error or we've tried all models, don't try other models
+        if (!isCapacityError && !isRateLimitError) {
           break;
         }
-        // Continue to next model if it's a capacity error
-        console.log(`Trying next model due to capacity error with ${model}...`);
+        // Continue to next model if it's a capacity/rate limit error
+        console.log(`Trying next model due to ${isRateLimitError ? 'rate limit' : 'capacity'} error with ${model}...`);
       }
     }
 
@@ -115,16 +123,19 @@ export async function POST(request: NextRequest) {
     // Check for specific Groq API over capacity error
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     const isCapacityError = errorMessage.includes('over capacity') || (err.status === 503);
+    const isRateLimitError = errorMessage.includes('rate_limit_exceeded') || errorMessage.includes('Rate limit reached');
     
     return NextResponse.json(
       { 
         success: false, 
-        error: isCapacityError 
-          ? 'The AI service is currently over capacity. Please try again in a few moments.'
-          : 'Failed to process chat query',
+        error: isRateLimitError 
+          ? 'The AI service has reached its rate limit. Please try again later.'
+          : (isCapacityError 
+              ? 'The AI service is currently over capacity. Please try again in a few moments.'
+              : 'Failed to process chat query'),
         details: errorMessage
       },
-      { status: isCapacityError ? 503 : 500 }
+      { status: (isCapacityError || isRateLimitError) ? 503 : 500 }
     );
   }
 }

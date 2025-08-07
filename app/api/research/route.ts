@@ -18,28 +18,54 @@ export async function POST(request: NextRequest) {
     const data = await fetchAllData(query);
 
     // Analyze data with Groq AI
-    const result: ResearchResult = await analyzeCryptoData(query, data);
-
-    return NextResponse.json({
-      success: true,
-      data: result,
-    });
+    try {
+      const result: ResearchResult = await analyzeCryptoData(query, data);
+      
+      return NextResponse.json({
+        success: true,
+        data: result,
+      });
+    } catch (groqError) {
+      console.error('Error analyzing data with Groq:', groqError);
+      
+      // Check if this is a rate limit or capacity error
+      const errorMessage = groqError instanceof Error ? groqError.message : 'Unknown error';
+      const isRateLimitError = errorMessage.includes('rate_limit_exceeded') || errorMessage.includes('Rate limit reached');
+      const isCapacityError = errorMessage.includes('over capacity');
+      
+      // If API error, return more detailed error to the client
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: isRateLimitError 
+            ? 'The AI service has reached its rate limit. Please try again later.'
+            : (isCapacityError 
+                ? 'The AI service is currently over capacity. Please try again in a few moments.'
+                : 'Failed to process research query with AI'),
+          fallbackData: {
+            summary: "We're experiencing high demand on our AI service. Here's a basic analysis of the available data.",
+            dataTable: data.defiProjects?.slice(0, 5) || [],
+            sources: ['Basic data analysis (AI service unavailable)'],
+            showDeFi: true,
+            showSentiment: false,
+            showNews: false,
+            showTable: true
+          },
+          details: errorMessage
+        },
+        { status: isCapacityError || isRateLimitError ? 503 : 500 }
+      );
+    }
   } catch (error) {
     console.error('Research API error:', error);
-    
-    // Check for specific Groq API over capacity error
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const isCapacityError = errorMessage.includes('over capacity');
     
     return NextResponse.json(
       { 
         success: false, 
-        error: isCapacityError 
-          ? 'The AI service is currently over capacity. Please try again in a few moments.'
-          : 'Failed to process research query',
-        details: errorMessage
+        error: 'Failed to process research query',
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
-      { status: isCapacityError ? 503 : 500 }
+      { status: 500 }
     );
   }
 }
