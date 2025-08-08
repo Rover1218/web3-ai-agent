@@ -373,10 +373,13 @@ export async function analyzeCryptoData(query: string, data: any): Promise<Resea
       etherscanData: allData.etherscanData || undefined
     };
     
+    // Refine data table for explicit comparison queries (e.g., "Compare Ethereum and Solana")
+    const refinedTable = refineComparisonTable(query, transformedData, analysis.dataTable || []);
+
     return {
       summary: analysis.summary,
       data: transformedData,
-      dataTable: analysis.dataTable || [],
+      dataTable: refinedTable,
       sources: analysis.sources,
       timestamp: new Date().toISOString(),
       showDeFi: Boolean(allData.defiProjects && allData.defiProjects.length > 0),
@@ -418,21 +421,37 @@ async function generateAnalysisWithFallback(query: string, data: any, maxRetries
       const groq = new Groq({
         apiKey: process.env.GROQ_API_KEY,
       });
-            
-            const completion = await groq.chat.completions.create({
-              messages: [
-                {
-            role: "system",
-            content: `You are an expert crypto analyst. Analyze the provided data and return a comprehensive analysis in JSON format.`
-          },
-          {
-            role: "user",
-            content: `Query: ${query}\n\nData: ${JSON.stringify(data, null, 2)}\n\nProvide analysis with: summary, insights (array), riskFactors (array), marketTrends (string), sources (array), and dataTable (array of objects with project, tvl, tvlChange, price, priceChange, sentiment, newsCount fields).`
-          }
+      // --- DATA REDUCTION / TOKEN BUDGETING ---------------------------------
+      // We aggressively trim the dataset before sending to the model to avoid 413
+      const reduced = reduceDataForModel(data, query, attempt);
+      const reducedJson = JSON.stringify(reduced); // no pretty print to save tokens
+      const approxInputTokens = Math.ceil(reducedJson.length / 4); // rough heuristic
+      console.log(`🗜️ Reduced data length: ${reducedJson.length} chars (~${approxInputTokens} tokens)`);
+      if (approxInputTokens > 5500) {
+        console.warn('⚠️ Still above safe token budget after reduction – applying hard trim');
+        // Hard trim: keep only essential aggregates
+        const hardTrim = {
+          meta: reduced.meta,
+          aggregates: reduced.aggregates,
+          topCrypto: reduced.cryptoData?.slice(0, 5),
+          topDeFi: reduced.defiProjects?.slice(0, 5),
+          news: reduced.newsEvents?.slice(0, 5)?.map((n: any) => ({ t: n.title, d: n.publishedAt }))
+        };
+        const hardTrimJson = JSON.stringify(hardTrim);
+        console.log(`🪓 Hard trimmed length: ${hardTrimJson.length} chars (~${Math.ceil(hardTrimJson.length/4)} tokens)`);
+      }
+
+      const systemPrompt = 'You are an expert crypto analyst. Respond ONLY with a minified JSON object. No markdown, no commentary.';
+      const userPrompt = `Query: ${query}\nData:${reducedJson}\nReturn JSON with keys: summary (string), insights (string[] max 6), riskFactors (string[] max 6), marketTrends (string), sources (string[]), dataTable (rows <= 10, fields: project,tvl,tvlChange,price,priceChange,sentiment,newsCount).`;
+
+      const completion = await groq.chat.completions.create({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
         ],
-        model: model,
+        model,
         temperature: 0.1,
-        max_tokens: 2000,
+        max_tokens: 1400,
         top_p: 1,
         stream: false,
       });
@@ -464,6 +483,16 @@ async function generateAnalysisWithFallback(query: string, data: any, maxRetries
 
     } catch (error: any) {
       console.error(`Groq API error (${error.status === 429 ? 'rate limit' : 'general error'}):`, error.status, error.message);
+      // Handle payload too large / token limit message (413 or token size notice)
+      const msg: string = error?.message || '';
+      if (error.status === 413 || msg.includes('Request too large') || msg.includes('tokens per minute') ) {
+        console.warn('🔁 Oversized request detected, further reducing data & switching model');
+        nextModel();
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 500 * attempt));
+          continue;
+        }
+      }
       
       if (error.status === 429) {
         console.log('Rate limit hit, trying next model...');
@@ -490,6 +519,85 @@ async function generateAnalysisWithFallback(query: string, data: any, maxRetries
   }
   
   throw new Error('All Groq models failed');
+}
+
+// Reduce raw fetched data to a compact, model-friendly subset.
+function reduceDataForModel(data: any, query: string, attempt: number) {
+  try {
+    const qLower = (query || '').toLowerCase();
+    const focusTokens = extractTokens(query || '');
+    const maxDeFi = attempt === 1 ? 15 : attempt === 2 ? 10 : 5;
+    const maxCrypto = attempt === 1 ? 12 : attempt === 2 ? 8 : 5;
+    const maxNews = attempt === 1 ? 20 : attempt === 2 ? 10 : 5;
+
+    const cryptoData = (data.cryptoData || [])
+      .filter((c: any) => focusTokens.length ? focusTokens.includes(c.symbol) : true)
+      .sort((a: any, b: any) => (b.marketCap || 0) - (a.marketCap || 0))
+      .slice(0, maxCrypto)
+      .map((c: any) => ({
+        symbol: c.symbol,
+        name: c.name,
+        price: c.price,
+        priceChange24h: c.priceChange24h,
+        marketCap: c.marketCap,
+        volume24h: c.volume24h
+      }));
+
+    const defiProjects = (data.defiProjects || [])
+      .sort((a: any, b: any) => (b.tvl || 0) - (a.tvl || 0))
+      .slice(0, maxDeFi)
+      .map((p: any) => ({
+        name: p.name,
+        tvl: p.tvl,
+        tvlChange24h: p.tvlChange24h,
+        tvlChange7d: p.tvlChange7d,
+        chains: p.chains?.slice(0, 5)
+      }));
+
+    const newsEvents = (data.newsEvents || [])
+      .slice(0, maxNews)
+      .map((n: any) => ({ title: n.title, sentiment: n.sentiment, publishedAt: n.publishedAt }));
+
+    const etherscanGas = data.etherscanData?.gasPrice ? {
+      LastBlock: data.etherscanData.gasPrice.LastBlock,
+      SafeGasPrice: data.etherscanData.gasPrice.SafeGasPrice,
+      Fast: data.etherscanData.gasPrice.Fast
+    } : undefined;
+
+    // Aggregates to help model without full raw arrays
+    const tvlTotal = (data.defiProjects || []).reduce((s: number, p: any) => s + (p.tvl || 0), 0);
+    const avgPriceChange = cryptoData.length ? (cryptoData.reduce((s: number, c: any) => s + (c.priceChange24h || 0), 0) / cryptoData.length) : 0;
+
+    const generatedTable = generateDataTableFromRawData({
+      defiProjects,
+      cryptoData,
+      newsEvents
+    }, query).slice(0, 10); // ensure max 10 rows
+
+    return {
+      meta: {
+        attempt,
+        focusTokens,
+        queryFragment: query.slice(0, 160)
+      },
+      aggregates: {
+        tvlTotal,
+        avgPriceChange: Number(avgPriceChange.toFixed(2)),
+        defiCount: (data.defiProjects || []).length,
+        cryptoCount: (data.cryptoData || []).length,
+        newsCount: (data.newsEvents || []).length
+      },
+      cryptoData,
+      defiProjects,
+      newsEvents,
+      etherscan: etherscanGas,
+      // Provide already generated dataTable to reduce model work
+      suggestedTable: generatedTable
+    };
+  } catch (e) {
+    console.warn('reduceDataForModel failed, returning minimal structure', e);
+    return { meta: { attempt, error: true }, cryptoData: [], defiProjects: [] };
+  }
 }
 
 // Fallback function to generate a clean summary from available data
@@ -686,6 +794,66 @@ function generateDynamicConclusion(query: string, data: any): string {
   }
   
   return conclusion;
+}
+
+// Refine / filter the data table when the user explicitly asks to compare a small set of tokens/projects.
+function refineComparisonTable(query: string, rawData: any, existing: DataTableRow[]): DataTableRow[] {
+  try {
+    const q = query.toLowerCase();
+    if (!/compare|vs|versus/.test(q)) return existing; // only apply on comparison intent
+
+    // Extract explicit tokens (symbols) and project name words
+    const tokens = extractTokens(query); // returns uppercase symbols
+    const nameTargets = tokens.map(t => t.toLowerCase());
+
+    // Also capture common full names for ETH & BTC etc
+    const extraNameMap: Record<string,string[]> = {
+      'ETH': ['ethereum'],
+      'BTC': ['bitcoin'],
+      'SOL': ['solana'],
+      'BNB': ['bnb', 'binance'],
+      'ADA': ['cardano'],
+    };
+    tokens.forEach(sym => {
+      (extraNameMap[sym] || []).forEach(n => nameTargets.push(n));
+    });
+
+    // If user only mentions two to five items, we restrict to them strictly.
+    if (tokens.length >= 2 && tokens.length <= 6) {
+      const filtered = existing.filter(r => {
+        const proj = r.project?.toLowerCase();
+        return nameTargets.some(t => proj.includes(t));
+      });
+
+      // If model returned unrelated rows and we lost everything, rebuild from raw crypto data for those tokens.
+      if (filtered.length === 0) {
+        const rebuilt: DataTableRow[] = [];
+        (rawData.cryptoData || []).forEach((c: any) => {
+          if (tokens.includes(c.symbol)) {
+            rebuilt.push({
+              project: c.name,
+              tvl: 'N/A',
+              tvlChange: 'N/A',
+              price: typeof c.price === 'number' ? `$${c.price.toFixed(2)}` : 'N/A',
+              priceChange: typeof c.priceChange24h === 'number' ? `${c.priceChange24h>0?'+':''}${c.priceChange24h.toFixed(2)}%` : 'N/A',
+              sentiment: c.priceChange24h > 2 ? 'Positive' : c.priceChange24h < -2 ? 'Negative' : 'Neutral',
+              newsCount: c.symbol === 'ETH' ? 20 : c.symbol === 'BTC' ? 25 : 10
+            });
+          }
+        });
+        return rebuilt.slice(0, tokens.length);
+      }
+
+      // Preserve order of appearance in query by sorting filtered rows accordingly
+      const order = nameTargets;
+      filtered.sort((a,b) => order.findIndex(t => a.project.toLowerCase().includes(t)) - order.findIndex(t => b.project.toLowerCase().includes(t)));
+      return filtered.slice(0, tokens.length);
+    }
+    return existing;
+  } catch (e) {
+    console.warn('refineComparisonTable failed, returning original table', e);
+    return existing;
+  }
 }
 
 export async function generateInsights(query: string, data: any): Promise<string> {

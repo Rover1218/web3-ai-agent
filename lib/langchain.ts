@@ -58,6 +58,41 @@ const ResearchResultSchema = z.object({
 const apiRequirementsParser = StructuredOutputParser.fromZodSchema(APIRequirementsSchema);
 const researchResultParser = StructuredOutputParser.fromZodSchema(ResearchResultSchema);
 
+// Custom simplified format instructions to avoid model echoing entire JSON schema with fences
+function getResearchFormatInstructions(): string {
+  return `Return ONLY compact valid JSON with the following structure (no markdown, no code fences):\n{\n  "summary": string,\n  "dataTable": optional array of up to 10 rows: [{"project": string, "tvl": string, "tvlChange": string, "price": string, "priceChange": string, "sentiment": string, "newsCount": number|string}],\n  "sources": string[],\n  "insights": string[],\n  "riskFactors": string[],\n  "marketTrends": string\n}\nNo extra keys.`;
+}
+
+// Helper to extract the last JSON object from messy LLM output containing code fences / schema echoes
+function extractLastJsonObject(text: string): any | null {
+  if (!text) return null;
+  // Remove code fences
+  const cleaned = text.replace(/```[a-zA-Z]*\n?/g, '');
+  // Find all top-level JSON objects heuristically
+  const matches: string[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        matches.push(cleaned.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  for (let i = matches.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(matches[i]);
+    } catch {/* ignore */}
+  }
+  return null;
+}
+
 // Prompt for analyzing what APIs are needed
 const apiAnalysisPrompt = PromptTemplate.fromTemplate(`
 You are an expert crypto analyst assistant. Analyze the user's query and determine which APIs and data sources are needed to provide a comprehensive answer.
@@ -88,27 +123,26 @@ Be specific about:
 const researchPrompt = PromptTemplate.fromTemplate(`
 You are an expert crypto analyst assistant. Analyze the following data and provide comprehensive insights.
 
-User Query: {query}
+STRICT OUTPUT RULES (must follow exactly):
+- Output ONLY a single valid JSON object.
+- NO markdown, NO code fences, NO schema reproduction, NO commentary.
+- Use only the keys specified below. Do not invent new keys.
 
-Available Data:
-- Crypto Market Data: {cryptoData}
-- DeFi Projects: {defiProjects}
-- Etherscan Blockchain Data: {etherscanData}
-- Dune Analytics Data: {duneData}
+User Query: {query}
+Crypto Market Data: {cryptoData}
+DeFi Projects: {defiProjects}
+Etherscan Data: {etherscanData}
+Dune Data: {duneData}
 
 {format_instructions}
 
-IMPORTANT: You must respond with ONLY a valid JSON object that matches the schema exactly. Do not include any markdown formatting, explanations, or additional text outside the JSON.
-
-Provide a detailed analysis including:
-1. Summary of key findings
-2. Data table for comparison (if applicable)
-3. Key insights and actionable recommendations
-4. Risk factors to consider
-5. Current market trends
-6. Data sources used
-
-Make sure your response is comprehensive and actionable. Return ONLY the JSON object.
+Content guidance:
+- summary: concise but comprehensive paragraph(s)
+- dataTable: only if comparative metrics are relevant; max 10 rows
+- insights: bullet-style actionable points (max 8)
+- riskFactors: distinct risks (max 8)
+- marketTrends: 1-3 sentences on directional context
+- sources: list actual data sources you used among: Crypto Market Data, DeFiLlama, Etherscan, Dune Analytics
 `);
 
 // Chain for analyzing API requirements
@@ -130,7 +164,7 @@ export const researchChain = RunnableSequence.from([
     defiProjects: (input: any) => JSON.stringify(input.data.defiProjects || []),
     etherscanData: (input: any) => JSON.stringify(input.data.etherscanData || {}),
     duneData: (input: any) => JSON.stringify(input.data.duneData || []),
-    format_instructions: () => researchResultParser.getFormatInstructions(),
+    format_instructions: () => getResearchFormatInstructions(),
   },
   researchPrompt,
   model,
@@ -265,27 +299,25 @@ export async function analyzeWithLangChain(
           setTimeout(() => reject(new Error('Final analysis timeout')), 30000)
         )
       ]) as any;
-    } catch (parseError) {
-      console.error('Parsing error, attempting manual JSON extraction:', parseError);
-      
-      // Try to extract JSON from the response manually
-      try {
-        const response = await model.invoke([
-          ['system', 'You are a crypto analyst. Respond with ONLY valid JSON.'],
-          ['human', `Analyze this data for query "${query}": ${JSON.stringify(data)}`]
-        ]);
-        
-        const text = response.content as string;
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          result = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error('No valid JSON found in response');
+    } catch (parseError: any) {
+      console.error('Parsing error, attempting structured fallback extraction');
+      // 1. Try llmOutput if available
+      const raw = parseError?.llmOutput || parseError?.output || '';
+      let extracted = extractLastJsonObject(raw);
+      if (!extracted) {
+        // 2. Try a lightweight re-ask with stricter instructions
+        try {
+          const retry = await model.invoke([
+            ['system', 'Output ONLY a single valid minified JSON object meeting the specified keys. No markdown.'],
+            ['human', `Query: ${query}\nData: ${JSON.stringify(data)}\nKeys: summary,dataTable,sources,insights,riskFactors,marketTrends`]
+          ]);
+          extracted = extractLastJsonObject(retry.content as string);
+        } catch (retryErr) {
+          console.error('Retry invoke failed:', retryErr);
         }
-      } catch (manualError) {
-        console.error('Manual JSON extraction failed:', manualError);
-        throw parseError; // Re-throw original error for fallback
       }
+      if (!extracted) throw parseError;
+      result = extracted;
     }
 
     // Step 4: Format the response

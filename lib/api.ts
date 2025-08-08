@@ -352,14 +352,29 @@ export async function fetchDeFiProjects(): Promise<DeFiProject[]> {
 export async function fetchDuneData(query: string): Promise<any[]> {
   try {
     // This is a simplified version. Real Dune API requires authentication
+    if (!DUNE_API_KEY || DUNE_API_KEY === 'your-dune-api-key') {
+      return [];
+    }
     const response = await axios.get(`https://api.dune.com/api/v1/query/execution`, {
       headers: {
         'X-DUNE-API-KEY': DUNE_API_KEY,
       },
-      params: {
-        query: query,
-      },
+      params: { query },
+      validateStatus: () => true
     });
+    if (response.status === 403) {
+      console.warn('⚠️ Dune API 403 (likely plan limitation). Returning fallback duneData.');
+      return [{
+        type: 'dune_fallback',
+        reason: 'forbidden_or_plan_limit',
+        queryFragment: query.slice(0,120),
+        timestamp: new Date().toISOString()
+      }];
+    }
+    if (response.status >= 400) {
+      console.warn('⚠️ Dune API error status', response.status, response.data?.error);
+      return [];
+    }
     return response.data.result?.rows || [];
   } catch (error) {
     console.error('Error fetching Dune data:', error);
@@ -828,8 +843,24 @@ export async function fetchEtherscanGasPrice(): Promise<any> {
     console.log('🔗 Etherscan gas price response:', response.data);
 
     if (response.data.status === '1' && response.data.result) {
-      console.log('✅ Etherscan gas price data:', response.data.result);
-      return response.data.result;
+      const r = response.data.result;
+      // Normalize to internal EtherscanGasPrice interface expected by UI (SafeLow, Standard, Fast, Fastest)
+      // Etherscan gasoracle now returns SafeGasPrice / ProposeGasPrice / FastGasPrice.
+      const mapped = {
+        SafeLow: r.SafeGasPrice ?? r.safeGasPrice ?? '0',
+        Standard: r.ProposeGasPrice ?? r.proposeGasPrice ?? r.SafeGasPrice ?? '0',
+        Fast: r.FastGasPrice ?? r.fastGasPrice ?? r.ProposeGasPrice ?? '0',
+        Fastest: ((): string => {
+          const base = Number(r.FastGasPrice || r.ProposeGasPrice || r.SafeGasPrice || '0');
+            if (!isNaN(base) && base > 0) return (base * 1.15).toFixed(9); // derive
+            return r.FastGasPrice || r.ProposeGasPrice || r.SafeGasPrice || '0';
+        })(),
+        suggestBaseFee: r.suggestBaseFee || r.suggestedBaseFee || '0',
+        LastBlock: r.LastBlock || r.lastBlock || '0',
+        _raw: r
+      } as any;
+      console.log('✅ Mapped Etherscan gas price data:', mapped);
+      return mapped;
     }
     console.log('❌ Etherscan gas price API error:', response.data);
     return null;
