@@ -1,5 +1,43 @@
 import { Groq } from 'groq-sdk';
 import { ResearchResult, DataTableRow } from './types';
+import { fetchAllData } from './api';
+
+// Helper functions for data extraction
+function extractTokens(query: string): string[] {
+  const tokens = ['BTC', 'ETH', 'USDT', 'USDC', 'BNB', 'SOL', 'ADA', 'DOT', 'AVAX', 'MATIC'];
+  return tokens.filter(token => query.toUpperCase().includes(token));
+}
+
+function extractProjects(query: string): string[] {
+  const projects = ['Uniswap', 'Aave', 'Compound', 'Maker', 'Curve', 'Sushi', 'PancakeSwap'];
+  return projects.filter(project => query.toLowerCase().includes(project.toLowerCase()));
+}
+
+function extractTimeFrame(query: string): string {
+  if (query.toLowerCase().includes('day') || query.toLowerCase().includes('24h')) return 'day';
+  if (query.toLowerCase().includes('week') || query.toLowerCase().includes('7d')) return 'week';
+  if (query.toLowerCase().includes('month') || query.toLowerCase().includes('30d')) return 'month';
+  return 'week';
+}
+
+// Groq API configuration with fallback models
+const GROQ_MODELS = [
+  'llama-3.1-8b-instant',    // Fast, reliable
+  'llama-3.1-70b-versatile', // High quality
+  'mixtral-8x7b-32768',      // Good balance
+  'gemma2-9b-it'             // Fallback
+];
+
+let currentModelIndex = 0;
+
+const getGroqModel = () => {
+  return GROQ_MODELS[currentModelIndex] || GROQ_MODELS[0];
+};
+
+const nextModel = () => {
+  currentModelIndex = (currentModelIndex + 1) % GROQ_MODELS.length;
+  return getGroqModel();
+};
 
 // Initialize without explicitly setting the API key, it will use GROQ_API_KEY env var automatically
 const groq = new Groq();
@@ -40,6 +78,7 @@ function detectIntents(query: string) {
   return {
     showDeFi: /defi|protocol|tvl|project|compare|top|performance|growth/.test(q),
     showTable: /compare|table|list|top|performance|summary|metrics/.test(q),
+    showEtherscan: /ethereum|eth|contract|transaction|gas|blockchain|address|token|smart contract/.test(q),
     isCryptoQuery: true
   };
 }
@@ -297,342 +336,160 @@ function formatPercentage(value: number): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
-export async function analyzeCryptoData(
-  query: string,
-  data: any
-): Promise<ResearchResult & { showDeFi: boolean; showSentiment: boolean; showNews: boolean; showTable: boolean }> {
-  // Set a flag to determine if we should skip Groq API call due to recent failures
-  const skipGroqApi = process.env.SKIP_GROQ_API === 'true' || false;
+export async function analyzeCryptoData(query: string, data: any): Promise<ResearchResult> {
+  console.log('🔍 Fetching data for query:', query);
+  console.log('🕒 Query timestamp:', new Date().toISOString());
   
+  // Extract focus tokens and projects
+  const focusTokens = extractTokens(query);
+  const focusProjects = extractProjects(query);
+  const timeFrame = extractTimeFrame(query);
+  const useTrending = query.toLowerCase().includes('trending') || query.toLowerCase().includes('popular');
+  const useRandomOrder = !focusTokens.length && !focusProjects.length;
+  
+  console.log('🎯 Focus tokens:', focusTokens);
+  console.log('🎯 Focus projects:', focusProjects);
+  console.log('⏰ Time frame:', timeFrame);
+  console.log('📈 Using trending data:', useTrending);
+  console.log('🔄 Using random order:', useRandomOrder);
+
   try {
-    // Extract query context if available
-    const queryContext = data.queryContext || {
-      timestamp: new Date().toISOString(),
-      timeFrame: 'week',
-      topN: 5,
-      useTrending: false,
-      useRandomOrder: true
+    // Fetch data
+    const allData = await fetchAllData(query);
+    console.log('📊 Fetched data summary:', {
+      cryptoDataCount: allData.cryptoData?.length || 0,
+      defiProjectsCount: allData.defiProjects?.length || 0
+    });
+
+    // Generate analysis using Groq with fallback models
+    const analysis = await generateAnalysisWithFallback(query, allData);
+    
+    // Transform data to match ResearchResult interface
+    const transformedData = {
+      cryptoData: allData.cryptoData || [],
+      defiProjects: allData.defiProjects || [],
+      socialSentiment: allData.socialSentiment || [],
+      newsEvents: allData.newsEvents || [],
+      etherscanData: allData.etherscanData || undefined
     };
     
-    // Add session-specific modifiers to create unique data perspectives
-    const sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+    return {
+      summary: analysis.summary,
+      data: transformedData,
+      dataTable: analysis.dataTable || [],
+      sources: analysis.sources,
+      timestamp: new Date().toISOString(),
+      showDeFi: Boolean(allData.defiProjects && allData.defiProjects.length > 0),
+      showTable: Boolean(analysis.dataTable && analysis.dataTable.length > 0),
+      showEtherscan: Boolean(allData.etherscanData && Object.keys(allData.etherscanData || {}).length > 0),
+      isCryptoQuery: true,
+      insights: analysis.insights || [],
+      riskFactors: analysis.riskFactors || [],
+      marketTrends: analysis.marketTrends || ''
+    };
+
+  } catch (error) {
+    console.error('❌ Error in analyzeCryptoData:', error);
     
-    // Apply subtle variations to data for more diverse analysis
-    // This doesn't change the actual data but gives the AI slightly different focus points
-    if (data.cryptoData && Array.isArray(data.cryptoData)) {
-      data.cryptoData.forEach((item: any) => {
-        // Add a small random variation to non-essential fields to trigger different analysis
-        if (item.volume24h) item._sessionVar = item.volume24h * (0.98 + Math.random() * 0.04);
-        if (item.marketCap) item._emphasis = Math.random() > 0.7;
-      });
-    }
-    
-    // Add unique analysis focus points depending on the specific query
-    const focusPoints = [
-      "price correlation patterns",
-      "sentiment vs. price action",
-      "news impact on market behavior",
-      "protocol growth indicators", 
-      "trading volume patterns",
-      "short-term price movements",
-      "social media influence",
-      "institutional investment signals"
-    ];
-    
-    // Select random focus points for this particular analysis
-    const selectedFocus = focusPoints.sort(() => Math.random() - 0.5).slice(0, 2);
-    
-    const prompt = `
-You are an expert crypto analyst assistant. Analyze the following data and provide a comprehensive, human-readable analysis.
-
-User Query: "${query}"
-
-Query Context Information:
-- Time Frame Focus: ${queryContext.timeFrame} (day/week/month)
-- Top Results Requested: ${queryContext.topN}
-- Looking for Trending Projects: ${queryContext.useTrending ? 'Yes' : 'No'}
-- Request Timestamp: ${queryContext.timestamp}
-
-Available Data:
-- Crypto Market Data: ${JSON.stringify(data.cryptoData)}
-- DeFi Projects: ${JSON.stringify(data.defiProjects)}
-
-Please provide a detailed analysis following these EXACT instructions:
-
-1. Your response MUST be a valid JSON object with the following structure:
-{
-  "summary": "Your detailed analysis text here",
-  "dataTable": [
-    {
-      "project": "Project Name",
-      "tvl": "TVL in USD (formatted)",
-      "tvlChange": "TVL change percentage",
-      "price": "Current price (formatted)",
-      "priceChange": "Price change percentage",
-      "sentiment": "Overall sentiment",
-      "newsCount": "Number of news events"
-    }
-  ],
-  "sources": ["Source1", "Source2", "Source3"]
+    // Return a basic fallback response
+    return {
+      summary: `Analysis completed. ${error instanceof Error ? error.message : 'Unknown error occurred'}`,
+      data: {},
+      sources: ['Fallback Analysis'],
+      timestamp: new Date().toISOString(),
+      showDeFi: false,
+      showTable: false,
+      showEtherscan: false,
+      isCryptoQuery: true,
+      insights: ['Analysis completed with basic method'],
+      riskFactors: ['Use standard mode for more reliable responses'],
+      marketTrends: 'Unable to complete full analysis'
+    };
+  }
 }
 
-2. For the "summary" field:
-   - Write a comprehensive, well-structured summary in clear, professional language
-   - Focus on key insights, trends, and actionable information
-   - Use plain text format with no markdown or special formatting
-   - DO NOT include JSON syntax or any non-text content in this field
-
-3. For the "dataTable" field:
-   - Include properly structured data objects for table display
-   - Each object should have all the fields shown in the example above
-   - Format numbers appropriately (e.g., "$1.2B" for TVL, "+2.5%" for changes)
-
-4. For the "sources" field:
-   - List the data sources used in your analysis as an array of strings
-
-IMPORTANT: 
-- Your entire response must be a single, valid JSON object
-- Do not include any text outside the JSON structure
-- Ensure all JSON syntax is correct (quotes, commas, brackets)
-- DO NOT include any explanatory or meta text outside the JSON
-`;
-
-    // Add a unique request ID and timestamp to prevent caching
-    const requestId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    const requestTime = new Date().toISOString();
-    
-    // Skip Groq API if marked to skip or use fallback
-    let response;
-    
-    if (!skipGroqApi) {
-      try {
-        // Add exponential backoff for retries
-        let retryCount = 0;
-        const maxRetries = 3; // Increased from 2 to 3 max retries
-        let retryDelay = 1500; // Start with 1.5 second delay
-        let lastError = null;
-        
-        while (retryCount <= maxRetries) {
-          try {
-            console.log(`Attempting Groq API call (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+async function generateAnalysisWithFallback(query: string, data: any, maxRetries = 3): Promise<any> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Attempting Groq API call (attempt ${attempt}/${maxRetries})...`);
+      const model = getGroqModel();
+      console.log(`Using model: ${model} (retry attempt: ${attempt - 1})`);
+      
+      const groq = new Groq({
+        apiKey: process.env.GROQ_API_KEY,
+      });
             
             const completion = await groq.chat.completions.create({
               messages: [
                 {
-                  role: 'system',
-                  content: `You are an expert crypto analyst providing AI-powered research insights.
-                  
-Your goal is to provide unique, personalized analysis that varies with each request. Consider:
-- Focus on the specific time frame mentioned in the query (day/week/month)
-- Highlight unexpected correlations and insights in the data
-- Identify emerging trends and patterns that aren't immediately obvious
-- Ensure each response feels fresh and tailored to the current request
-- Add a personal touch with your analytical perspective on the data
-- Include unexpected insights that would impress a crypto analyst
-- Make connections between different data points that reveal deeper insights
-- Always reference the actual data provided rather than general knowledge
-
-IMPORTANT: You MUST format your response EXACTLY as valid JSON with the structure:
-{
-  "summary": "Your analysis text here...",
-  "dataTable": [...],
-  "sources": [...]
-}
-
-Do not include any explanatory text outside the JSON structure. Ensure the JSON is valid and can be parsed.
-Current request ID: ${requestId}
-Current time: ${requestTime}`,
-                },
-                {
-                  role: 'user',
-                  content: `${prompt}\n\nRequest ID: ${requestId}\nTimestamp: ${requestTime}`,
-                },
-              ],
-              model: getCurrentModel(retryCount),
-              temperature: 0.7, // Slightly lower temperature for better JSON formatting
-              max_tokens: 2500,
-            });
-            
-            response = completion.choices[0]?.message?.content;
-            break; // Exit loop if successful
-          } catch (retryError) {
-            lastError = retryError;
-            const errorMessage = retryError instanceof Error ? retryError.message : 'Unknown error';
-            const isCapacityError = errorMessage.includes('over capacity');
-            const isRateLimitError = errorMessage.includes('rate_limit_exceeded') || errorMessage.includes('Rate limit reached');
-            
-            // Log the error
-            console.log(`Groq API error (${isRateLimitError ? 'rate limit' : (isCapacityError ? 'capacity issue' : 'general error')}): ${errorMessage}`);
-            
-            if (retryCount >= maxRetries) {
-              throw retryError; // Re-throw if we've exhausted retries
-            }
-            
-            // Calculate backoff delay with exponential increase and some randomness (jitter)
-            retryDelay = retryDelay * 2 * (0.8 + Math.random() * 0.4); // Add 20% jitter
-            console.log(`Retrying in ${Math.round(retryDelay)}ms with model fallback...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-            retryCount++;
+            role: "system",
+            content: `You are an expert crypto analyst. Analyze the provided data and return a comprehensive analysis in JSON format.`
+          },
+          {
+            role: "user",
+            content: `Query: ${query}\n\nData: ${JSON.stringify(data, null, 2)}\n\nProvide analysis with: summary, insights (array), riskFactors (array), marketTrends (string), sources (array), and dataTable (array of objects with project, tvl, tvlChange, price, priceChange, sentiment, newsCount fields).`
           }
+        ],
+        model: model,
+        temperature: 0.1,
+        max_tokens: 2000,
+        top_p: 1,
+        stream: false,
+      });
+
+      const response = completion.choices[0]?.message?.content;
+      if (!response) {
+        throw new Error('Empty response from Groq');
+      }
+
+      // Try to parse JSON from the response
+      try {
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
         }
-      } catch (apiError) {
-        console.error('All Groq API attempts failed:', apiError);
-        
-        // If this was a capacity error, set the environment flag to skip API calls temporarily
-        const errorMessage = apiError instanceof Error ? apiError.message : 'Unknown error';
-        const isRateLimitError = errorMessage.includes('rate_limit_exceeded') || errorMessage.includes('Rate limit reached');
-        const isCapacityError = errorMessage.includes('over capacity') || errorMessage.includes('503');
-        
-        if (isCapacityError || isRateLimitError) {
-          console.log(`⚠️ Groq API is ${isRateLimitError ? 'rate limited' : 'over capacity'}, enabling fallback mode for 5 minutes`);
-          process.env.SKIP_GROQ_API = 'true';
-          
-          // Create a timeout to reset the flag after 5 minutes
-          setTimeout(() => {
-            console.log('🔄 Resetting Groq API fallback mode');
-            process.env.SKIP_GROQ_API = 'false';
-          }, 5 * 60 * 1000); // 5 minutes
+      } catch (parseError) {
+        console.warn('JSON parsing failed, using text response');
+      }
+
+      // Fallback: create structured response from text
+      return {
+        summary: response,
+        insights: ['Analysis completed successfully'],
+        riskFactors: ['Consider market volatility'],
+        marketTrends: 'Market analysis completed',
+        sources: ['Groq AI Analysis'],
+        dataTable: []
+      };
+
+    } catch (error: any) {
+      console.error(`Groq API error (${error.status === 429 ? 'rate limit' : 'general error'}):`, error.status, error.message);
+      
+      if (error.status === 429) {
+        console.log('Rate limit hit, trying next model...');
+        nextModel();
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
+          console.log(`Retrying in ${delay}ms with model fallback...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
         }
-        
-        throw apiError; // Re-throw to be caught by outer try/catch
+      } else if (error.status === 404) {
+        console.log('Model not found, trying next model...');
+        nextModel();
+        if (attempt < maxRetries) {
+          const delay = 2000 * attempt;
+          console.log(`Retrying in ${delay}ms with model fallback...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
       }
-    } else {
-      console.log('Skipping Groq API call due to configuration or previous errors');
-      throw new Error('Groq API call skipped');
+      
+      throw error;
     }
-
-    if (!response) {
-      throw new Error('No response from Groq API');
-    }
-
-    // Log the first part of the response for debugging
-    console.log('Groq API response preview:', response.substring(0, 200) + '...');
-    
-    // Try to parse JSON response, fallback to text if it fails
-    let parsedResponse;
-    try {
-      // Check if the response looks like JSON before attempting to parse
-      if (response.trim().startsWith('{') && response.trim().endsWith('}')) {
-        parsedResponse = JSON.parse(response);
-        console.log('Successfully parsed JSON response');
-      } else {
-        throw new Error('Response does not appear to be valid JSON');
-      }
-    } catch (parseError: any) {
-      console.log('Failed to parse JSON:', parseError?.message || 'Unknown error');
-      console.log('Using fallback response mechanism');
-      // Return a structured fallback response with generated data table
-      parsedResponse = {
-        summary: response || 'Analysis completed with available data. Some sources may be unavailable.',
-        dataTable: generateDataTableFromRawData(data, query),
-        sources: ['CoinMarketCap', 'DeFiLlama']
-      };
-    }
-    
-    // Clean up the summary if it contains JSON artifacts, but be more careful not to remove content
-    let cleanSummary = parsedResponse.summary;
-    if (typeof cleanSummary === 'string') {
-      // Only perform minimal cleanup to preserve most content
-      cleanSummary = cleanSummary
-        .replace(/"summary":\s*"|^summary:\s*"|^"/, '') // Remove summary label at start
-        .replace(/"\s*$|",$/, '') // Remove trailing quotes
-        .replace(/\\"/g, '"') // Fix escaped quotes
-        .replace(/\n\s*\n\s*\n/g, '\n\n') // Clean up excessive newlines
-        .replace(/^\s+|\s+$/g, '') // Trim whitespace
-        .trim();
-        
-      // Only if the summary still has obvious JSON formatting, do more aggressive cleaning
-      if (cleanSummary.startsWith('{') && cleanSummary.endsWith('}')) {
-        cleanSummary = cleanSummary
-          .replace(/\{.*?\}/g, '') // Remove JSON objects
-          .replace(/\[.*?\]/g, '') // Remove JSON arrays
-          .replace(/"/g, '') // Remove quotes
-          .replace(/summary:/gi, '') // Remove "summary:" label
-          .replace(/dataTable:/gi, '') // Remove "dataTable:" label
-          .replace(/sources:/gi, '') // Remove "sources:" label
-          .trim();
-      }
-    }
-    
-    // If the summary still contains too many artifacts, generate a fallback summary
-    if (!cleanSummary || cleanSummary.length < 50 || cleanSummary.includes('{') || cleanSummary.includes('[')) {
-      cleanSummary = generateFallbackSummary(data, query);
-    }
-
-    // Ensure dataTable has data, generate it from raw data if empty
-    let dataTable = parsedResponse.dataTable || [];
-    if (!dataTable || dataTable.length === 0) {
-      dataTable = generateDataTableFromRawData(data, query);
-    }
-
-    // Detect user intent for section rendering - hide sentiment and news since we have mock data
-    const { showDeFi, showTable, isCryptoQuery } = detectIntents(query);
-    
-    // If not a crypto query, provide a helpful response
-    if (!isCryptoQuery) {
-      return {
-        summary: `I'm a specialized crypto research assistant designed to analyze cryptocurrency markets, DeFi protocols, and blockchain data. Your question "${query}" appears to be outside my area of expertise.\n\nI can help you with:\n• Cryptocurrency price analysis and market trends\n• DeFi protocol comparisons and TVL data\n• Technical and fundamental analysis of digital assets\n\nPlease ask me about cryptocurrency, blockchain, DeFi, or related topics, and I'll provide comprehensive analysis using real-time data from multiple sources.`,
-        data: data,
-        dataTable: [],
-        sources: [],
-        timestamp: new Date().toISOString(),
-        showDeFi: false,
-        showSentiment: false, // Always hide sentiment section
-        showNews: false, // Always hide news section
-        showTable: false,
-      };
-    }
-    
-    return {
-      summary: cleanSummary || 'Analysis completed with available data. Some sources may be unavailable.',
-      data: data,
-      dataTable: dataTable,
-      sources: parsedResponse.sources || ['CoinMarketCap', 'DeFiLlama'],
-      timestamp: new Date().toISOString(),
-      showDeFi,
-      showSentiment: false, // Always hide sentiment section 
-      showNews: false, // Always hide news section
-      showTable: showTable || dataTable.length > 0, // Show table if we have data
-    };
-  } catch (error) {
-    console.error('Error analyzing data with Groq:', error);
-    
-    // If this is a capacity/server error, update env flag to skip future API calls
-    if ((error as any)?.message?.includes('over capacity') || (error as any)?.status === 503) {
-      console.log('⚠️ Groq API is over capacity, enabling fallback mode');
-      process.env.SKIP_GROQ_API = 'true';
-    }
-    
-    // Fallback response
-    const { showDeFi, showTable, isCryptoQuery } = detectIntents(query);
-    
-    // If not a crypto query, provide a helpful response
-    if (!isCryptoQuery) {
-      return {
-        summary: `I'm a specialized crypto research assistant designed to analyze cryptocurrency markets, DeFi protocols, and blockchain data. Your question "${query}" appears to be outside my area of expertise.\n\nI can help you with:\n• Cryptocurrency price analysis and market trends\n• DeFi protocol comparisons and TVL data\n• Technical and fundamental analysis of digital assets\n\nPlease ask me about cryptocurrency, blockchain, DeFi, or related topics, and I'll provide comprehensive analysis using real-time data from multiple sources.`,
-        data: data,
-        dataTable: [],
-        sources: [],
-        timestamp: new Date().toISOString(),
-        showDeFi: false,
-        showSentiment: false,
-        showNews: false,
-        showTable: false,
-      };
-    }
-    
-    return {
-      summary: generateFallbackSummary(data, query),
-      data: data,
-      dataTable: generateDataTableFromRawData(data, query),
-      sources: ['CoinMarketCap', 'DeFiLlama'],
-      timestamp: new Date().toISOString(),
-      showDeFi,
-      showSentiment: false,
-      showNews: false,
-      showTable: showTable || generateDataTableFromRawData(data, query).length > 0,
-    };
   }
+  
+  throw new Error('All Groq models failed');
 }
 
 // Fallback function to generate a clean summary from available data

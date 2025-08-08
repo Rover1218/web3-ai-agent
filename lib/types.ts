@@ -38,6 +38,60 @@ export interface NewsEvent {
   sentiment: 'positive' | 'negative' | 'neutral';
 }
 
+export interface EtherscanTokenInfo {
+  contractAddress: string;
+  tokenName: string;
+  tokenSymbol: string;
+  tokenDecimal: string;
+  totalSupply: string;
+}
+
+export interface EtherscanTransaction {
+  blockNumber: string;
+  timeStamp: string;
+  hash: string;
+  nonce: string;
+  blockHash: string;
+  transactionIndex: string;
+  from: string;
+  to: string;
+  value: string;
+  gas: string;
+  gasPrice: string;
+  isError: string;
+  txreceipt_status: string;
+  input: string;
+  contractAddress: string;
+  cumulativeGasUsed: string;
+  gasUsed: string;
+  confirmations: string;
+}
+
+export interface EtherscanGasPrice {
+  SafeLow: string;
+  Standard: string;
+  Fast: string;
+  Fastest: string;
+  suggestBaseFee: string;
+  LastBlock: string;
+}
+
+export interface EtherscanContractSource {
+  SourceCode: string;
+  ABI: string;
+  ContractName: string;
+  CompilerVersion: string;
+  OptimizationUsed: string;
+  Runs: string;
+  ConstructorArguments: string;
+  EVMVersion: string;
+  Library: string;
+  LicenseType: string;
+  Proxy: string;
+  Implementation: string;
+  SwarmSource: string;
+}
+
 export interface ResearchQuery {
   query: string;
   timestamp: string;
@@ -51,6 +105,13 @@ export interface ResearchResult {
     cryptoData?: CryptoData[];
     socialSentiment?: SocialSentiment[];
     newsEvents?: NewsEvent[];
+    etherscanData?: {
+      tokenInfo?: EtherscanTokenInfo;
+      transactions?: EtherscanTransaction[];
+      gasPrice?: EtherscanGasPrice;
+      contractSource?: EtherscanContractSource;
+    };
+    duneData?: any[];
   };
   dataTable?: DataTableRow[];
   sources: string[];
@@ -59,7 +120,13 @@ export interface ResearchResult {
   showSentiment?: boolean;
   showNews?: boolean;
   showTable?: boolean;
+  showEtherscan?: boolean;
   isCryptoQuery?: boolean;
+  // New LangChain fields
+  insights?: string[];
+  riskFactors?: string[];
+  marketTrends?: string;
+  conversationId?: string;
 }
 
 export interface DataTableRow {
@@ -76,4 +143,35 @@ export interface APIResponse {
   success: boolean;
   data?: any;
   error?: string;
+}
+
+// New interfaces for LangChain features
+export interface ConversationContext {
+  id: string;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: Date;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AnalysisRequest {
+  query: string;
+  mode: 'research' | 'chat';
+  conversationId?: string;
+  includeHistory?: boolean;
+}
+
+export interface APIRequirements {
+  needsCryptoData: boolean;
+  cryptoSymbols: string[];
+  needsDeFiData: boolean;
+  needsEtherscanData: boolean;
+  etherscanActions: string[];
+  needsDuneData: boolean;
+  duneQuery?: string;
+  analysisType: 'research' | 'chat';
+  priority: 'high' | 'medium' | 'low';
 }

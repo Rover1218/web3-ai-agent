@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Send, Loader2, Terminal, Database, MessageCircle } from 'lucide-react';
+import { Search, Loader2, Sparkles } from 'lucide-react';
 
 interface QueryInputProps {
   onQuerySubmit: (query: string, mode: 'research' | 'chat') => void;
@@ -21,131 +21,109 @@ export default function QueryInput({ onQuerySubmit, isLoading }: QueryInputProps
   };
 
   const exampleQueries = [
-    "Identify DeFi projects with the highest surge in TVL last week and summarize any major social sentiment shifts or news events affecting them.",
-    "Compare the performance of top 5 DeFi protocols and analyze their market sentiment trends.",
-    "What are the emerging trends in the crypto market based on recent price movements and social sentiment?",
-    "Analyze the correlation between TVL growth and social sentiment for major DeFi protocols."
+    "What's the current price of Bitcoin?",
+    "Show me top DeFi protocols by TVL",
+    "Compare Ethereum and Solana performance"
   ];
 
   return (
-    <div className="w-full max-w-5xl mx-auto">
+    <div className="w-full max-w-4xl mx-auto px-4">
       {/* Mode toggle */}
-      <div className="flex justify-center mb-4">
-        <div className="bg-zinc-900/50 backdrop-blur-md border border-zinc-800 rounded-xl p-1 flex">
-          <button 
-            onClick={() => setMode('research')} 
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-              mode === 'research' 
-                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' 
-                : 'text-gray-400 hover:text-gray-300'
+      <div className="flex justify-center mb-8">
+        <div className="bg-gray-100 border border-gray-200 rounded-2xl p-1.5 flex shadow-sm">
+          <button
+            onClick={() => setMode('research')}
+            className={`px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 font-mono ${
+              mode === 'research'
+                ? 'bg-white text-blue-600 shadow-sm border border-gray-200'
+                : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            <Database size={16} />
-            <span>Research Mode</span>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" />
+              Research
+            </div>
           </button>
-          <button 
-            onClick={() => setMode('chat')} 
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-              mode === 'chat' 
-                ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30' 
-                : 'text-gray-400 hover:text-gray-300'
+          <button
+            onClick={() => setMode('chat')}
+            className={`px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 font-mono ${
+              mode === 'chat'
+                ? 'bg-white text-purple-600 shadow-sm border border-gray-200'
+                : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            <MessageCircle size={16} />
-            <span>Chat Mode</span>
+            <div className="flex items-center gap-2">
+              <div className="h-4 w-4 rounded-full bg-gradient-to-r from-purple-400 to-pink-400"></div>
+              Chat
+            </div>
           </button>
         </div>
       </div>
-      
+
+      {/* Chat mode warning */}
       {mode === 'chat' && (
-        <motion.div 
-          className="mb-3 text-center text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/20 rounded-md p-2"
+        <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
+          className="mb-6 text-center"
         >
-          <span className="flex items-center justify-center">
-            <Terminal size={12} className="mr-1" />
-            Chat mode uses Groq AI API which may experience capacity limits. If you encounter errors, try Research mode instead.
-          </span>
+          <div className="inline-flex items-center px-4 py-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-xl text-sm font-mono">
+            <span>💬 Chat mode provides conversational responses</span>
+          </div>
         </motion.div>
       )}
 
-      <motion.form 
-        onSubmit={handleSubmit} 
-        className="mb-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-      >
-        <div className="flex w-full items-center relative group">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none z-10">
-            <Search className="h-6 w-6 text-cyan-400 group-hover:text-pink-400 transition-colors duration-300" />
+      {/* Query input form */}
+      <form onSubmit={handleSubmit} className="mb-12">
+        <div className="relative">
+          <div className="relative">
+            <Search className="absolute left-5 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={mode === 'research' ? "Ask anything about crypto, DeFi, or blockchain..." : "Chat with me about crypto and Web3..."}
+              className="w-full pl-12 pr-20 py-4 text-lg font-mono bg-white border-2 border-gray-200 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 placeholder-gray-400"
+              disabled={isLoading}
+            />
+            <motion.button
+              type="submit"
+              disabled={!query.trim() || isLoading}
+              className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-3 rounded-xl hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              {isLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Search className="h-5 w-5" />
+              )}
+            </motion.button>
           </div>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={mode === 'research' ? "Ask your crypto research question..." : "Chat with me about crypto and Web3..."}
-            className="retro-input flex-1 pl-12 pr-4 py-4 text-lg font-mono rounded-l-xl rounded-r-none border-r-0 focus:z-10 h-[56px] group-hover:border-pink-400 transition-all duration-300"
-            disabled={isLoading}
-            style={{ 
-              borderTopRightRadius: 0, 
-              borderBottomRightRadius: 0,
-              wordWrap: 'break-word',
-              whiteSpace: 'normal',
-              overflow: 'visible'
-            }}
-          />
-          <motion.button
-            type="submit"
-            disabled={!query.trim() || isLoading}
-            className="retro-button h-[56px] w-[56px] flex items-center justify-center rounded-l-none rounded-r-xl -ml-1 px-0 focus:z-10 group-hover:border-pink-400 transition-all duration-300"
-            style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <Send className="h-5 w-5" />
-            )}
-          </motion.button>
         </div>
-      </motion.form>
+      </form>
 
-      <motion.div 
-        className="mb-8"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, delay: 0.3 }}
-      >
-        <h3 className="text-xl font-semibold text-cyan-400 mb-6 flex items-center">
-          <Terminal className="h-5 w-5 mr-2" />
-          Example Queries:
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {exampleQueries.map((example, index) => (
+      {/* Example queries */}
+      <div className="mb-8">
+        <h3 className="text-gray-700 font-semibold mb-4 text-center font-mono text-lg">Try these examples:</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {exampleQueries.map((exampleQuery, index) => (
             <motion.button
               key={index}
-              onClick={() => setQuery(example)}
-              className="retro-card retro-card-hover p-4 text-left border border-cyan-500/30 hover:border-cyan-400"
-              initial={{ opacity: 0, x: index % 2 === 0 ? -20 : 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: 0.4 + index * 0.1 }}
-              whileHover={{ 
-                scale: 1.02,
-                borderColor: "rgba(0, 255, 255, 0.6)",
+              onClick={() => {
+                setQuery(exampleQuery);
+                onQuerySubmit(exampleQuery, mode);
               }}
+              disabled={isLoading}
+              className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-left hover:bg-white hover:border-blue-300 hover:shadow-sm transition-all duration-200 disabled:opacity-50 font-mono group"
+              whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              <span className="text-gray-300 text-sm font-mono leading-relaxed">
-                {example}
-              </span>
+              <p className="text-gray-600 text-sm font-mono group-hover:text-gray-800 transition-colors">{exampleQuery}</p>
             </motion.button>
           ))}
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

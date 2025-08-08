@@ -1,435 +1,356 @@
 'use client';
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Zap, Shield, BarChart3, Terminal, Cpu, Database, Satellite } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Search, Loader2, ExternalLink, TrendingUp, BarChart3, Globe, Shield, Zap } from 'lucide-react';
 import QueryInput from '@/components/QueryInput';
 import ResearchResults from '@/components/ResearchResults';
 import { ResearchResult } from '@/lib/types';
 
 export default function Home() {
-  const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ResearchResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentMode, setCurrentMode] = useState<'research' | 'chat'>('research');
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isUsingLangChain, setIsUsingLangChain] = useState(true);
+  const [isUsingFallback, setIsUsingFallback] = useState(false);
 
   const handleQuerySubmit = async (query: string, mode: 'research' | 'chat') => {
     setIsLoading(true);
     setError(null);
-    setResult(null);
     setCurrentMode(mode);
-    
-    const endpoint = mode === 'research' ? '/api/research' : '/api/chat';
+    setIsUsingFallback(false);
 
     try {
+      const endpoint = isUsingLangChain ? '/api/analyze-langchain' : '/api/analyze';
+      
+      // Add timeout to the fetch request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+      
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          query, 
+          mode,
+          conversationId,
+          includeHistory: true 
+        }),
+        signal: controller.signal,
       });
 
-      const data = await response.json();
+      clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to process query');
-      }
+      const result = await response.json();
 
-      if (data.success) {
-        setResult(data.data);
+      if (result.success) {
+        setResult(result.data);
+        if (result.conversationId) {
+          setConversationId(result.conversationId);
+        }
+        // Check if fallback was used
+        if (result.message && result.message.includes('fallback')) {
+          setIsUsingFallback(true);
+        }
       } else {
-        throw new Error(data.error || 'Failed to get results');
+        setError(result.error || 'Analysis failed');
       }
     } catch (err) {
-      // Get most helpful error message
-      const message = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(message);
-      
-      // Log additional details
-      console.error(`Query failed (${mode} mode):`, err);
+      if (err instanceof Error && err.name === 'AbortError') {
+        setError('Request timed out. Please try again or use standard mode.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Network error');
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
+  const clearConversation = () => {
+    setResult(null);
+    setError(null);
+    setConversationId(null);
+    setIsUsingFallback(false);
+  };
+
+  const toggleMode = () => {
+    setIsUsingLangChain(!isUsingLangChain);
+    clearConversation();
+  };
+
   const features = [
     {
-      icon: Brain,
-      title: 'AI-Powered Analysis',
-      description: 'Advanced AI algorithms analyze complex crypto data and provide actionable insights.',
-      color: 'text-cyan-400',
+      icon: <TrendingUp className="h-6 w-6" />,
+      title: "Real-time Market Data",
+      description: "Get live cryptocurrency prices, market caps, and trading volumes from CoinMarketCap and CoinGecko."
     },
     {
-      icon: Zap,
-      title: 'Real-Time Data',
-      description: 'Fetch live data from CoinMarketCap, DeFiLlama, and Dune Analytics.',
-      color: 'text-pink-400',
+      icon: <BarChart3 className="h-6 w-6" />,
+      title: "DeFi Analytics",
+      description: "Track TVL, protocol performance, and DeFi project rankings with DeFiLlama integration."
     },
     {
-      icon: Shield,
-      title: 'Multi-Source Verification',
-      description: 'Cross-reference data from multiple platforms for accuracy and reliability.',
-      color: 'text-green-400',
+      icon: <Globe className="h-6 w-6" />,
+      title: "Blockchain Insights",
+      description: "Access Ethereum gas prices, token information, and transaction data via Etherscan."
     },
     {
-      icon: BarChart3,
-      title: 'Comprehensive Metrics',
-      description: 'Track TVL, price movements, social sentiment, and news events.',
-      color: 'text-purple-400',
-    },
+      icon: <Shield className="h-6 w-6" />,
+      title: "AI-Powered Analysis",
+      description: "Advanced analysis using Groq AI and LangChain for intelligent data interpretation."
+    }
   ];
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-        delayChildren: 0.3,
-      },
-    },
-  };
-
-  const itemVariants = {
-    hidden: { y: 20, opacity: 0 },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: {
-        duration: 0.5,
-        ease: "easeOut" as const,
-      },
-    },
-  };
+  const exampleQueries = [
+    "Compare the top 5 DeFi protocols by TVL",
+    "What's the current Ethereum gas price?",
+    "Show me Bitcoin and Ethereum price analysis",
+    "Which DeFi projects are trending this week?",
+    "Analyze the market sentiment for UNI token"
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 relative overflow-hidden">
-      {/* Animated Background Elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.div
-          className="absolute top-20 left-20 w-32 h-32 bg-cyan-500/20 rounded-full blur-xl"
-          animate={{
-            x: [0, 100, 0],
-            y: [0, -50, 0],
-          }}
-          transition={{
-            duration: 8,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-        />
-        <motion.div
-          className="absolute top-40 right-20 w-24 h-24 bg-pink-500/20 rounded-full blur-xl"
-          animate={{
-            x: [0, -80, 0],
-            y: [0, 60, 0],
-          }}
-          transition={{
-            duration: 6,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-        />
-        <motion.div
-          className="absolute bottom-20 left-1/3 w-40 h-40 bg-purple-500/20 rounded-full blur-xl"
-          animate={{
-            x: [0, 120, 0],
-            y: [0, -80, 0],
-          }}
-          transition={{
-            duration: 10,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-        />
+    <div className="min-h-screen bg-white font-mono">
+      {/* Background Pattern */}
+      <div className="fixed inset-0 opacity-5">
+        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+              <circle cx="10" cy="10" r="1" fill="currentColor" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#dots)" />
+        </svg>
       </div>
 
       {/* Header */}
       <motion.header 
-        className="relative z-10 text-white py-16 border-b-2 border-cyan-500/30"
-        initial={{ opacity: 0, y: -50 }}
+        initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8 }}
-        style={{
-          background: 'linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(26,26,46,0.9) 50%, rgba(22,33,62,0.8) 100%)',
-          backdropFilter: 'blur(10px)',
-        }}
+        className="relative z-10 bg-gradient-to-r from-gray-50 to-white border-b border-gray-200"
       >
-        {/* Scan line effect */}
-        <div className="absolute inset-0 scan-line opacity-30"></div>
-        
-        {/* Terminal-style border */}
-        <div className="absolute inset-0 border-2 border-cyan-500/20 rounded-none pointer-events-none"></div>
-        
-        <div className="container mx-auto px-4 text-center relative z-10">
-          {/* Terminal prompt effect */}
-          <motion.div
-            className="flex items-center justify-center mb-4"
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-          >
-            <span className="text-cyan-400 font-mono text-lg mr-2">$</span>
-            <span className="text-green-400 font-mono text-lg animate-pulse">crypto_research_assistant</span>
-            <span className="text-cyan-400 font-mono text-lg ml-2">--start</span>
-          </motion.div>
-
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-            className="mb-6"
-          >
-            <h1 className="text-6xl md:text-8xl font-bold mb-4 font-mono relative">
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-pink-500 to-purple-400 animate-pulse">
-                Crypto Research Assistant
-              </span>
-              {/* Glitch effect layers */}
-              <span className="absolute inset-0 text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-cyan-400 opacity-0 animate-ping" style={{ animationDelay: '0.5s' }}>
-                Crypto Research Assistant
-              </span>
-              <span className="absolute inset-0 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 opacity-0 animate-ping" style={{ animationDelay: '1s' }}>
-                Crypto Research Assistant
-              </span>
-            </h1>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
+                <Zap className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-green-600 bg-clip-text text-transparent font-mono">
+                  Web3 AI Agent
+                </h1>
+                <p className="text-sm text-gray-600 font-mono">Powered by LangChain & Groq</p>
+              </div>
+            </div>
             
-            {/* Subtitle with typewriter effect */}
-            <motion.div
-              className="text-xl md:text-2xl text-cyan-200 max-w-4xl mx-auto leading-relaxed font-mono"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.6 }}
-            >
-              <span className="text-green-400">AI-powered</span> research assistant for crypto analysts. 
-              <br />
-              <span className="text-yellow-400">Get comprehensive insights</span> from multiple data sources in seconds.
-            </motion.div>
-          </motion.div>
-
-          {/* Status indicators */}
-          <motion.div
-            className="flex justify-center items-center space-x-6 text-sm font-mono"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.8 }}
-          >
-            <div className="flex items-center">
-              <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
-              <span className="text-green-400">API Connected</span>
+            {/* LangChain Toggle */}
+            <div className="flex items-center space-x-4">
+              <span className="text-gray-600 text-sm font-mono">Engine:</span>
+              <button
+                onClick={toggleMode}
+                className={`px-4 py-2 rounded-lg border transition-colors text-sm font-medium font-mono ${
+                  isUsingLangChain 
+                    ? 'bg-blue-600 text-white border-blue-600' 
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-600'
+                }`}
+              >
+                {isUsingLangChain ? 'LangChain' : 'Standard'}
+              </button>
             </div>
-            <div className="flex items-center">
-              <div className="w-2 h-2 bg-cyan-400 rounded-full mr-2 animate-pulse" style={{ animationDelay: '0.5s' }}></div>
-              <span className="text-cyan-400">Data Sources Active</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-2 h-2 bg-purple-400 rounded-full mr-2 animate-pulse" style={{ animationDelay: '1s' }}></div>
-              <span className="text-purple-400">AI Ready</span>
-            </div>
-          </motion.div>
+          </div>
         </div>
       </motion.header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8 relative z-10">
-        {/* Query Input */}
+      <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Terminal Prompt */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.6 }}
+          className="mb-8 text-center"
         >
-          <QueryInput onQuerySubmit={handleQuerySubmit} isLoading={isLoading} />
+          <div className="inline-flex items-center space-x-2 bg-gray-100 border border-gray-200 rounded-lg px-4 py-2 font-mono text-sm">
+            <span className="text-blue-600">user@web3-agent</span>
+            <span className="text-gray-400">:</span>
+            <span className="text-green-600">~</span>
+            <span className="text-gray-400">$</span>
+            <span className="text-gray-700">analyze crypto data</span>
+          </div>
         </motion.div>
 
-        {/* Loading State */}
-        <AnimatePresence>
-          {isLoading && (
-            <motion.div 
-              className="text-center py-12"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className="inline-flex items-center px-6 py-4 retro-card neon-border">
-                <motion.div 
-                  className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full mr-3"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                />
-                <span className="text-cyan-400 font-mono">Analyzing your query and fetching data...</span>
-              </div>
-            </motion.div>
+        {/* Title */}
+        <motion.h1
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-4xl md:text-6xl font-bold text-center mb-6 bg-gradient-to-r from-blue-600 via-purple-600 to-green-600 bg-clip-text text-transparent font-mono"
+        >
+          Intelligent Crypto Analysis
+        </motion.h1>
+
+        {/* Subtitle */}
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-xl text-gray-700 text-center mb-12 max-w-3xl mx-auto font-mono"
+        >
+          Ask questions about <span className="text-green-600 font-semibold">cryptocurrencies</span>, 
+          analyze <span className="text-blue-600 font-semibold">DeFi protocols</span>, 
+          and get <span className="text-purple-600 font-semibold">blockchain insights</span> with AI-powered intelligence.
+        </motion.p>
+
+        {/* Status indicators */}
+        <div className="flex justify-center gap-4 mb-6">
+          <div className="flex items-center space-x-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span className="text-sm text-gray-600 font-mono">System Online</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+            <span className="text-sm text-gray-600 font-mono">
+              {isUsingLangChain ? 'LangChain Mode' : 'Standard Mode'}
+            </span>
+          </div>
+          {isUsingFallback && (
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+              <span className="text-sm text-yellow-600 font-mono">Using Fallback</span>
+            </div>
           )}
-        </AnimatePresence>
+        </div>
+
+        {/* Query Input */}
+        <QueryInput onQuerySubmit={handleQuerySubmit} isLoading={isLoading} />
+
+        {/* Loading State */}
+        {isLoading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-12"
+          >
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-gray-600 font-mono">
+              {isUsingLangChain ? '🤖 LangChain is analyzing your query and fetching relevant data...' : 'Analyzing your query...'}
+            </p>
+          </motion.div>
+        )}
 
         {/* Error State */}
-        <AnimatePresence>
-          {error && (
-            <motion.div 
-              className="retro-card neon-border border-red-500 p-6 mb-8"
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 50 }}
-              transition={{ duration: 0.3 }}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-red-50 border border-red-200 rounded-lg p-6 mb-8"
+          >
+            <h3 className="text-lg font-semibold text-red-800 mb-2 font-mono">Analysis Error</h3>
+            <p className="text-red-700 mb-4 font-mono">{error}</p>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-600 hover:text-red-800 underline font-mono"
             >
-              <h3 className="text-lg font-semibold text-red-400 mb-2 flex items-center">
-                <Terminal className="h-5 w-5 mr-2" />
-                {error.includes("over capacity") ? "AI Service Busy" : "System Error"}
-              </h3>
-              {error.includes("over capacity") ? (
-                <div className="space-y-3">
-                  <p className="text-yellow-300 font-mono">The Groq AI service is currently experiencing high demand. Please try again in a moment.</p>
-                  <div className="flex items-center mt-2 bg-black/30 p-3 rounded-md border border-yellow-500/30">
-                    <div className="w-2 h-2 bg-yellow-400 rounded-full mr-2 animate-pulse"></div>
-                    <p className="text-gray-300 text-sm">
-                      You can check the service status at <a href="https://groqstatus.com/" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">groqstatus.com</a>
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-red-300 font-mono">{error}</p>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              Try again
+            </button>
+          </motion.div>
+        )}
 
         {/* Results */}
-        <AnimatePresence>
-          {result && (
-            <motion.div
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -50 }}
-              transition={{ duration: 0.5 }}
-            >
-              <ResearchResults result={result} mode={currentMode} />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {result && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8"
+          >
+            <ResearchResults result={result} />
+            
+            {/* Conversation Controls */}
+            {conversationId && (
+              <div className="mt-6 text-center">
+                <button
+                  onClick={clearConversation}
+                  className="text-gray-500 hover:text-gray-700 text-sm underline font-mono"
+                >
+                  Clear conversation history
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
 
         {/* Features Section */}
-        {!result && !isLoading && (
-          <motion.section 
-            className="mt-16"
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-          >
-            <motion.h2 
-              className="text-4xl font-bold text-center mb-12 neon-text text-cyan-400"
-              variants={itemVariants}
-            >
-              Why Choose Our Research Assistant?
-            </motion.h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              {features.map((feature, index) => (
-                <motion.div 
-                  key={index} 
-                  className="retro-card retro-card-hover p-6 text-center"
-                  variants={itemVariants}
-                  whileHover={{ 
-                    scale: 1.05,
-                    rotateY: 5,
-                  }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <motion.div 
-                    className={`w-16 h-16 ${feature.color} rounded-full flex items-center justify-center mb-4 mx-auto`}
-                    whileHover={{ rotate: 360 }}
-                    transition={{ duration: 0.6 }}
-                  >
-                    <feature.icon className="h-8 w-8" />
-                  </motion.div>
-                  <h3 className="text-xl font-semibold text-white mb-3">
-                    {feature.title}
-                  </h3>
-                  <p className="text-gray-300 text-sm leading-relaxed">
-                    {feature.description}
-                  </p>
-                </motion.div>
-              ))}
-            </div>
-          </motion.section>
-        )}
-
-        {/* Example Queries Section */}
-        {!result && !isLoading && (
-          <motion.section 
-            className="mt-16"
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.8 }}
-          >
-            <div className="retro-card p-8">
-              <motion.h2 
-                className="text-3xl font-bold text-center mb-8 neon-text text-purple-400"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.5, delay: 1 }}
+        <motion.section
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="py-16"
+        >
+          <h2 className="text-3xl font-bold text-center text-gray-800 mb-12 font-mono">
+            Powered by Advanced AI & Data Sources
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {features.map((feature, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="text-center"
               >
-                Try These Example Queries
-              </motion.h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {[
-                  {
-                    title: "DeFi Analysis",
-                    query: "Identify DeFi projects with the highest surge in TVL last week and summarize any major social sentiment shifts or news events affecting them."
-                  },
-                  {
-                    title: "Market Trends",
-                    query: "Compare the performance of top 5 DeFi protocols and analyze their market sentiment trends."
-                  },
-                  {
-                    title: "Sentiment Analysis",
-                    query: "What are the emerging trends in the crypto market based on recent price movements and social sentiment?"
-                  },
-                  {
-                    title: "Correlation Study",
-                    query: "Analyze the correlation between TVL growth and social sentiment for major DeFi protocols."
-                  }
-                ].map((example, index) => (
-                  <motion.div 
-                    key={index}
-                    className="retro-card retro-card-hover p-6 border border-cyan-500/30"
-                    initial={{ opacity: 0, x: index % 2 === 0 ? -50 : 50 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.5, delay: 1.2 + index * 0.1 }}
-                    whileHover={{ 
-                      scale: 1.02,
-                      borderColor: "rgba(0, 255, 255, 0.6)",
-                    }}
-                  >
-                    <h3 className="font-semibold text-cyan-400 mb-3 flex items-center">
-                      <Database className="h-4 w-4 mr-2" />
-                      {example.title}
-                    </h3>
-                    <p className="text-gray-300 text-sm leading-relaxed">
-                      "{example.query}"
-                    </p>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          </motion.section>
-        )}
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center mx-auto mb-4">
+                  <div className="text-white">
+                    {feature.icon}
+                  </div>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2 font-mono">{feature.title}</h3>
+                <p className="text-gray-600 text-sm font-mono">{feature.description}</p>
+              </motion.div>
+            ))}
+          </div>
+        </motion.section>
+
+        {/* Example Queries */}
+        <motion.section
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="py-16"
+        >
+          <h2 className="text-2xl font-bold text-center text-gray-800 mb-8 font-mono">
+            Try These Example Queries
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {exampleQueries.map((query, index) => (
+              <motion.button
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                onClick={() => handleQuerySubmit(query, 'research')}
+                disabled={isLoading}
+                className="p-4 border border-gray-200 rounded-lg text-left hover:border-blue-600 transition-colors disabled:opacity-50 font-mono"
+              >
+                <p className="text-gray-700 text-sm font-mono">{query}</p>
+              </motion.button>
+            ))}
+          </div>
+        </motion.section>
       </main>
 
       {/* Footer */}
-      <motion.footer 
-        className="bg-black/50 backdrop-blur-sm text-white py-8 mt-16 relative z-10"
+      <motion.footer
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.8, delay: 1.5 }}
+        className="bg-gray-100 border-t border-gray-200 py-8 mt-16"
       >
-        <div className="container mx-auto px-4 text-center">
-          <motion.p 
-            className="text-gray-300 font-mono"
-            animate={{ opacity: [0.5, 1, 0.5] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          >
-            Powered by Groq AI • Data from CoinMarketCap, DeFiLlama, and Dune Analytics
-          </motion.p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center text-gray-600">
+            <p className="mb-2 font-mono">
+              Powered by <span className="font-semibold">Groq AI</span> • 
+              Enhanced with <span className="font-semibold">LangChain</span>
+            </p>
+            <p className="text-sm font-mono">
+              Data from CoinMarketCap, DeFiLlama, Dune Analytics, and Etherscan
+            </p>
+          </div>
         </div>
       </motion.footer>
     </div>

@@ -1,53 +1,33 @@
-# Crypto Research Assistant
+# Web3 AI Agent with LangChain Integration
 
-An AI-powered research assistant for crypto analysts that takes natural-language queries and fetches real-time data from multiple major platforms including Dune Analytics, DeFiLlama, and CoinMarketCap.
+A sophisticated AI-powered cryptocurrency research assistant that intelligently analyzes user queries and fetches relevant data from multiple sources using LangChain and Groq AI.
 
-## Features
+## 🚀 Features
 
-- 🤖 **AI-Powered Analysis**: Uses Groq API for intelligent data analysis and insights
-- 📊 **Multi-Source Data**: Fetches data from CoinMarketCap, DeFiLlama, and Dune Analytics
-- 🔍 **Natural Language Queries**: Ask complex questions in plain English
-- 📈 **Real-Time Metrics**: Track TVL, price movements, social sentiment, and news events
-- 🎯 **Compound Analysis**: Answer complex questions combining multiple data sources
-- 📋 **Data Tables**: Present key metrics in organized, sortable tables
-- 🎨 **Modern UI**: Beautiful, responsive interface built with Next.js and Tailwind CSS
+### 🤖 Intelligent AI Analysis
+- **LangChain Integration**: Advanced AI chains that analyze user queries and determine which APIs to call
+- **Groq AI**: Fast, reliable AI processing with multiple model fallbacks
+- **Conversation Memory**: Maintains context across multiple queries
+- **Structured Output**: Consistent, well-formatted responses with insights and risk analysis
 
-## Example Queries
+### 📊 Multi-Source Data Integration
+- **CoinMarketCap/CoinGecko**: Real-time cryptocurrency prices, market caps, and trading volumes
+- **DeFiLlama**: DeFi protocol TVL, rankings, and performance metrics
+- **Etherscan**: Blockchain data including gas prices, token information, and transactions
+- **Dune Analytics**: Custom blockchain analytics and metrics
 
-The assistant can handle complex queries like:
+### 🎨 Modern UI/UX
+- **Retro Professional Theme**: Clean, modern interface with professional styling
+- **Real-time Updates**: Live data fetching and analysis
+- **Responsive Design**: Works seamlessly on desktop and mobile devices
+- **Interactive Elements**: Smooth animations and hover effects
 
-- "Identify DeFi projects with the highest surge in TVL last week and summarize any major social sentiment shifts or news events affecting them. Present key metrics in a data table, and cite all source platforms used."
-- "Compare the performance of top 5 DeFi protocols and analyze their market sentiment trends."
-- "What are the emerging trends in the crypto market based on recent price movements and social sentiment?"
-- "Analyze the correlation between TVL growth and social sentiment for major DeFi protocols."
-
-## Tech Stack
-
-- **Frontend**: Next.js 14, React 18, TypeScript
-- **Styling**: Tailwind CSS
-- **AI**: Groq API (Llama 3.1 8B model)
-- **Data Sources**: 
-  - CoinMarketCap API
-  - DeFiLlama API
-  - Dune Analytics API
-- **Icons**: Lucide React
-- **HTTP Client**: Axios
-
-## Prerequisites
-
-- Node.js 18+ 
-- npm or yarn
-- API keys for:
-  - [Groq](https://console.groq.com/) (for AI analysis)
-  - [CoinMarketCap](https://coinmarketcap.com/api/) (for crypto market data)
-  - [Dune Analytics](https://dune.com/docs/api/) (for blockchain analytics)
-
-## Installation
+## 🛠️ Installation
 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd crypto-research-assistant
+   cd web3-ai-agent
    ```
 
 2. **Install dependencies**
@@ -56,15 +36,12 @@ The assistant can handle complex queries like:
    ```
 
 3. **Set up environment variables**
-   ```bash
-   cp env.example .env.local
-   ```
-   
-   Edit `.env.local` and add your API keys:
+   Create a `.env.local` file in the root directory:
    ```env
-   GROQ_API_KEY=your-groq-api-key-here
-   COINMARKETCAP_API_KEY=your-coinmarketcap-api-key-here
-   DUNE_API_KEY=your-dune-api-key-here
+   GROQ_API_KEY=your_groq_api_key_here
+   COINMARKETCAP_API_KEY=your_coinmarketcap_api_key_here
+   DUNE_API_KEY=your_dune_api_key_here
+   ETHERSCAN_API_KEY=your_etherscan_api_key_here
    ```
 
 4. **Run the development server**
@@ -73,87 +50,171 @@ The assistant can handle complex queries like:
    ```
 
 5. **Open your browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
+   Navigate to `http://localhost:3000`
 
-## API Endpoints
+## 🔧 How LangChain Works
 
-### POST `/api/research`
-Submit a research query for analysis.
+### Intelligent Query Analysis
+The system uses LangChain to analyze user queries and determine which data sources are needed:
 
-**Request Body:**
-```json
-{
-  "query": "Your research question here"
-}
+```typescript
+// Example: User asks "What's the price of Bitcoin and show me DeFi protocols"
+const apiRequirements = await apiAnalysisChain.invoke({ query });
+// Returns: {
+//   needsCryptoData: true,
+//   cryptoSymbols: ['BTC'],
+//   needsDeFiData: true,
+//   needsEtherscanData: false,
+//   priority: 'high'
+// }
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "summary": "AI-generated analysis summary",
-    "dataTable": [...],
-    "sources": ["CoinMarketCap", "DeFiLlama", "Dune Analytics"],
-    "timestamp": "2024-01-01T00:00:00.000Z"
-  }
-}
+### Automatic Data Fetching
+Based on the analysis, the system automatically fetches relevant data:
+
+```typescript
+// Fetches only the data that's needed
+const data = await fetchRequiredData(apiRequirements);
+// Only calls APIs that are relevant to the query
 ```
 
-## Project Structure
+### Enhanced Analysis
+LangChain provides structured analysis with insights, risk factors, and market trends:
 
-```
-├── app/                    # Next.js app directory
-│   ├── api/               # API routes
-│   │   └── research/      # Research endpoint
-│   ├── globals.css        # Global styles
-│   ├── layout.tsx         # Root layout
-│   └── page.tsx           # Main page
-├── components/            # React components
-│   ├── QueryInput.tsx     # Query input form
-│   ├── DataTable.tsx      # Data table display
-│   └── ResearchResults.tsx # Results display
-├── lib/                   # Utility libraries
-│   ├── api.ts            # API service functions
-│   ├── groq.ts           # Groq AI integration
-│   └── types.ts          # TypeScript definitions
-├── public/               # Static assets
-└── package.json          # Dependencies and scripts
+```typescript
+const result = await researchChain.invoke({ query, data });
+// Returns comprehensive analysis with:
+// - Summary
+// - Key insights
+// - Risk factors
+// - Market trends
+// - Data table (if applicable)
 ```
 
-## Data Sources
+## 📝 Usage Examples
 
-### CoinMarketCap
-- Real-time cryptocurrency prices
-- Market cap and volume data
-- Price change percentages
+### Basic Queries
+- "What's the current price of Bitcoin?"
+- "Show me the top 5 DeFi protocols by TVL"
+- "What's the current Ethereum gas price?"
 
-### DeFiLlama
-- Total Value Locked (TVL) data
-- DeFi protocol rankings
-- Chain-specific metrics
+### Advanced Analysis
+- "Compare Bitcoin and Ethereum performance and analyze market trends"
+- "Which DeFi protocols are trending this week and what are the risks?"
+- "Analyze the correlation between TVL growth and social sentiment"
 
-### Dune Analytics
-- Blockchain analytics
-- Custom SQL queries
-- Historical data analysis
+### Blockchain Queries
+- "Show me recent Ethereum transactions"
+- "What's the token information for USDT?"
+- "Analyze gas price trends and their impact on DeFi usage"
 
-## Contributing
+## 🏗️ Architecture
+
+### Core Components
+
+1. **LangChain Integration** (`lib/langchain.ts`)
+   - Query analysis chains
+   - Data fetching orchestration
+   - Structured output parsing
+
+2. **API Layer** (`lib/api.ts`)
+   - Multi-source data fetching
+   - Error handling and fallbacks
+   - Rate limiting management
+
+3. **UI Components**
+   - `QueryInput`: User input with mode selection
+   - `ResearchResults`: Enhanced results display
+   - `DataTable`: Structured data presentation
+
+4. **API Routes**
+   - `/api/analyze-langchain`: Main LangChain analysis endpoint
+   - `/api/test-langchain`: Testing endpoint
+   - Conversation management endpoints
+
+### Data Flow
+
+```
+User Query → LangChain Analysis → API Requirements → Data Fetching → AI Analysis → Structured Response
+```
+
+## 🔍 Testing
+
+### Test LangChain Integration
+```bash
+# Visit the test endpoint
+curl http://localhost:3000/api/test-langchain
+```
+
+### Test Different Query Types
+1. **Crypto Price Queries**: "What's the price of Bitcoin?"
+2. **DeFi Analysis**: "Show me top DeFi protocols"
+3. **Blockchain Data**: "What's the current gas price?"
+4. **Complex Analysis**: "Compare top 5 cryptocurrencies and analyze trends"
+
+## 🎯 Key Benefits
+
+### For Users
+- **Intelligent Responses**: AI determines what data is relevant
+- **Comprehensive Analysis**: Multiple data sources in one query
+- **Actionable Insights**: Risk factors and recommendations included
+- **Conversation Context**: Remembers previous queries
+
+### For Developers
+- **Modular Architecture**: Easy to add new data sources
+- **Type Safety**: Full TypeScript support
+- **Error Handling**: Robust fallback mechanisms
+- **Scalable**: Built for production use
+
+## 🔧 Configuration
+
+### Environment Variables
+- `GROQ_API_KEY`: Required for AI analysis
+- `COINMARKETCAP_API_KEY`: For market data (optional, falls back to CoinGecko)
+- `DUNE_API_KEY`: For Dune Analytics queries
+- `ETHERSCAN_API_KEY`: For blockchain data
+
+### LangChain Configuration
+- **Model**: Uses Groq's `llama-3.3-70b-versatile` with fallbacks
+- **Temperature**: Set to 0.1 for consistent, focused responses
+- **Memory**: Maintains conversation context for up to 10 messages
+
+## 🚀 Deployment
+
+### Vercel (Recommended)
+1. Connect your GitHub repository to Vercel
+2. Set environment variables in Vercel dashboard
+3. Deploy automatically on push
+
+### Other Platforms
+- **Netlify**: Similar to Vercel deployment
+- **Railway**: Good for full-stack applications
+- **AWS/GCP**: For enterprise deployments
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-## License
+## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Support
+## 🆘 Support
 
-For support, please open an issue in the GitHub repository or contact the development team.
+- **Issues**: Create an issue on GitHub
+- **Discussions**: Use GitHub Discussions for questions
+- **Documentation**: Check the code comments for detailed explanations
 
-## Disclaimer
+## 🔮 Future Enhancements
 
-This tool is for educational and research purposes. Always verify data independently and do not make financial decisions based solely on automated analysis.
+- [ ] Add more data sources (Glassnode, Messari, etc.)
+- [ ] Implement advanced charting and visualization
+- [ ] Add portfolio tracking capabilities
+- [ ] Integrate with more blockchain networks
+- [ ] Add sentiment analysis from social media
+- [ ] Implement real-time notifications
+- [ ] Add export functionality for reports

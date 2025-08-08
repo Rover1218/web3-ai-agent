@@ -5,6 +5,9 @@ import { CryptoData, DeFiProject, SocialSentiment, NewsEvent } from './types';
 const COINMARKETCAP_API_KEY = process.env.COINMARKETCAP_API_KEY || 'your-coinmarketcap-api-key';
 // DeFiLlama doesn't require an API key - it's a free public API
 const DUNE_API_KEY = process.env.DUNE_API_KEY || 'your-dune-api-key';
+const ARTEMIS_API_KEY = process.env.ARTEMIS_API_KEY || 'your-artemis-api-key';
+const NANSEN_API_KEY = process.env.NANSEN_API_KEY || 'your-nansen-api-key';
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || 'your-etherscan-api-key';
 
 // CoinMarketCap API with fallback to CoinGecko
 export async function fetchCryptoData(symbols: string[]): Promise<CryptoData[]> {
@@ -650,11 +653,67 @@ export async function fetchAllData(query: string) {
   const newsEvents = await fetchNewsEvents(projectNames);
   console.log('📰 Fetched news events:', newsEvents.length);
 
+  // Fetch Etherscan data if query is related to Ethereum/blockchain analysis
+  let etherscanData = null;
+  if (queryLower.includes('ethereum') || queryLower.includes('eth') || 
+      queryLower.includes('contract') || queryLower.includes('transaction') ||
+      queryLower.includes('gas') || queryLower.includes('blockchain') ||
+      queryLower.includes('address') || queryLower.includes('token')) {
+    
+    console.log('🔗 Fetching Etherscan data...');
+    
+    // Get gas price data
+    const gasPrice = await fetchEtherscanGasPrice();
+    
+    // If we have specific contract addresses mentioned, fetch token info
+    let tokenInfo = null;
+    let transactions = [];
+    
+    // Common ERC-20 token contract addresses
+    const tokenContracts: { [key: string]: string } = {
+      'USDT': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      'USDC': '0xA0b86a33E6441b8C4C8C8C8C8C8C8C8C8C8C8C8C',
+      'UNI': '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
+      'LINK': '0x514910771AF9Ca656af840dff83E8264EcF986CA',
+      'AAVE': '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9',
+      'COMP': '0xc00e94Cb662C3520282E6f5717214004A7f26888',
+      'MKR': '0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2',
+    };
+    
+    // Check if any of our focus tokens have known contract addresses
+    for (const token of focusTokens) {
+      if (tokenContracts[token]) {
+        tokenInfo = await fetchEtherscanTokenInfo(tokenContracts[token]);
+        if (tokenInfo) break;
+      }
+    }
+    
+    // Fetch recent transactions for a sample address (in real app, this would be based on query)
+    if (queryLower.includes('transaction') || queryLower.includes('activity')) {
+      // Use a sample address for demonstration
+      const sampleAddress = '0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6'; // Example address
+      transactions = await fetchEtherscanTransactions(sampleAddress);
+    }
+    
+    etherscanData = {
+      gasPrice,
+      tokenInfo,
+      transactions: transactions.slice(0, 5), // Limit to 5 transactions
+    };
+    
+    console.log('🔗 Etherscan data fetched:', {
+      hasGasPrice: !!gasPrice,
+      hasTokenInfo: !!tokenInfo,
+      transactionCount: transactions.length
+    });
+  }
+
   return {
     cryptoData,
     defiProjects,
     socialSentiment: [], // We could implement mock social data later
     newsEvents,          // Now including the news events
+    etherscanData,       // Now including Etherscan data
     queryContext: {
       timestamp,
       timeFrame,
@@ -663,4 +722,144 @@ export async function fetchAllData(query: string) {
       useRandomOrder
     }
   };
+}
+
+// Etherscan API functions
+export async function fetchEtherscanTokenInfo(contractAddress: string): Promise<any> {
+  try {
+    if (!ETHERSCAN_API_KEY || ETHERSCAN_API_KEY === 'your-etherscan-api-key') {
+      console.log('⚠️ Etherscan API key not configured, skipping Etherscan data');
+      return null;
+    }
+
+    const response = await axios.get('https://api.etherscan.io/api', {
+      params: {
+        module: 'token',
+        action: 'tokeninfo',
+        contractaddress: contractAddress,
+        apikey: ETHERSCAN_API_KEY,
+      },
+    });
+
+    if (response.data.status === '1' && response.data.result) {
+      return response.data.result[0];
+    }
+    return null;
+  } catch (error) {
+    console.error('Etherscan token info error:', error);
+    return null;
+  }
+}
+
+export async function fetchEtherscanTokenBalance(contractAddress: string, walletAddress: string): Promise<any> {
+  try {
+    if (!ETHERSCAN_API_KEY || ETHERSCAN_API_KEY === 'your-etherscan-api-key') {
+      return null;
+    }
+
+    const response = await axios.get('https://api.etherscan.io/api', {
+      params: {
+        module: 'account',
+        action: 'tokenbalance',
+        contractaddress: contractAddress,
+        address: walletAddress,
+        tag: 'latest',
+        apikey: ETHERSCAN_API_KEY,
+      },
+    });
+
+    if (response.data.status === '1') {
+      return {
+        balance: response.data.result,
+        address: walletAddress,
+        contractAddress: contractAddress,
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Etherscan token balance error:', error);
+    return null;
+  }
+}
+
+export async function fetchEtherscanTransactions(address: string, startBlock: number = 0, endBlock: number = 99999999): Promise<any[]> {
+  try {
+    if (!ETHERSCAN_API_KEY || ETHERSCAN_API_KEY === 'your-etherscan-api-key') {
+      return [];
+    }
+
+    const response = await axios.get('https://api.etherscan.io/api', {
+      params: {
+        module: 'account',
+        action: 'txlist',
+        address: address,
+        startblock: startBlock,
+        endblock: endBlock,
+        sort: 'desc',
+        apikey: ETHERSCAN_API_KEY,
+      },
+    });
+
+    if (response.data.status === '1' && response.data.result) {
+      return response.data.result.slice(0, 10); // Limit to 10 most recent transactions
+    }
+    return [];
+  } catch (error) {
+    console.error('Etherscan transactions error:', error);
+    return [];
+  }
+}
+
+export async function fetchEtherscanGasPrice(): Promise<any> {
+  try {
+    if (!ETHERSCAN_API_KEY || ETHERSCAN_API_KEY === 'your-etherscan-api-key') {
+      console.log('⚠️ Etherscan API key not configured');
+      return null;
+    }
+
+    const response = await axios.get('https://api.etherscan.io/api', {
+      params: {
+        module: 'gastracker',
+        action: 'gasoracle',
+        apikey: ETHERSCAN_API_KEY,
+      },
+    });
+
+    console.log('🔗 Etherscan gas price response:', response.data);
+
+    if (response.data.status === '1' && response.data.result) {
+      console.log('✅ Etherscan gas price data:', response.data.result);
+      return response.data.result;
+    }
+    console.log('❌ Etherscan gas price API error:', response.data);
+    return null;
+  } catch (error) {
+    console.error('❌ Etherscan gas price error:', error);
+    return null;
+  }
+}
+
+export async function fetchEtherscanContractSource(contractAddress: string): Promise<any> {
+  try {
+    if (!ETHERSCAN_API_KEY || ETHERSCAN_API_KEY === 'your-etherscan-api-key') {
+      return null;
+    }
+
+    const response = await axios.get('https://api.etherscan.io/api', {
+      params: {
+        module: 'contract',
+        action: 'getsourcecode',
+        address: contractAddress,
+        apikey: ETHERSCAN_API_KEY,
+      },
+    });
+
+    if (response.data.status === '1' && response.data.result) {
+      return response.data.result[0];
+    }
+    return null;
+  } catch (error) {
+    console.error('Etherscan contract source error:', error);
+    return null;
+  }
 }

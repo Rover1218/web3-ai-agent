@@ -1,166 +1,129 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { DataTableRow } from '@/lib/types';
-import { TrendingUp, TrendingDown, Minus, BarChart3 } from 'lucide-react';
 
 interface DataTableProps {
   data: DataTableRow[];
   title?: string;
 }
 
-export default function DataTable({ data, title = "Research Results" }: DataTableProps) {
+export default function DataTable({ data, title = "Data Comparison" }: DataTableProps) {
   if (!data || data.length === 0) {
     return (
-      <motion.div 
-        className="retro-card p-6"
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5 }}
-      >
-        <h3 className="text-xl font-semibold text-cyan-400 mb-4 flex items-center">
-          <BarChart3 className="h-5 w-5 mr-2" />
-          {title}
-        </h3>
-        <p className="text-gray-400 font-mono">No comparison data available to display.</p>
-      </motion.div>
+      <div className="retro-card border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-blue-600 mb-4 font-mono">{title}</h3>
+        <p className="text-gray-600 font-mono">No comparison data available</p>
+      </div>
     );
   }
 
-  const formatCurrency = (value: string) => {
-    if (!value || value === 'N/A') return value;
-    const num = parseFloat(value.replace(/[$,BMK]/g, ''));
-    if (isNaN(num)) return value;
-    
-    if (value.includes('B')) return value; // Already formatted
-    if (value.includes('M')) return value; // Already formatted
-    if (value.includes('K')) return value; // Already formatted
-    
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(num);
+  const getChangeIcon = (change: string) => {
+    const value = parseFloat(change.replace(/[%+-]/g, ''));
+    if (value > 0) return <TrendingUp className="h-4 w-4 text-green-600" />;
+    if (value < 0) return <TrendingDown className="h-4 w-4 text-red-600" />;
+    return <Minus className="h-4 w-4 text-gray-500" />;
   };
 
-  const formatPercentage = (value: string) => {
-    if (!value || value === 'N/A') return value;
-    const num = parseFloat(value.replace(/[%,]/g, ''));
-    if (isNaN(num)) return value;
-    return `${num > 0 ? '+' : ''}${num.toFixed(2)}%`;
-  };
-
-  const getChangeIcon = (value: string) => {
-    if (!value || value === 'N/A') return <Minus className="h-4 w-4 text-gray-400" />;
-    const num = parseFloat(value.replace(/[%,]/g, ''));
-    if (isNaN(num)) return <Minus className="h-4 w-4 text-gray-400" />;
-    if (num > 0) return <TrendingUp className="h-4 w-4 text-green-400" />;
-    if (num < 0) return <TrendingDown className="h-4 w-4 text-red-400" />;
-    return <Minus className="h-4 w-4 text-gray-400" />;
-  };
-
-  const getChangeColor = (value: string) => {
-    if (!value || value === 'N/A') return 'text-gray-400';
-    const num = parseFloat(value.replace(/[%,]/g, ''));
-    if (isNaN(num)) return 'text-gray-400';
-    return num >= 0 ? 'text-green-400' : 'text-red-400';
+  const getChangeColor = (change: string) => {
+    const value = parseFloat(change.replace(/[%+-]/g, ''));
+    if (value > 0) return 'text-green-600';
+    if (value < 0) return 'text-red-600';
+    return 'text-gray-500';
   };
 
   const getSentimentColor = (sentiment: string) => {
     switch (sentiment.toLowerCase()) {
       case 'positive':
-        return 'text-green-400 bg-green-400/10';
+        return 'text-green-600 bg-green-50';
       case 'negative':
-        return 'text-red-400 bg-red-400/10';
-      case 'neutral':
-        return 'text-gray-400 bg-gray-400/10';
+        return 'text-red-600 bg-red-50';
       default:
-        return 'text-gray-400 bg-gray-400/10';
+        return 'text-gray-600 bg-gray-50';
     }
   };
 
   return (
-    <motion.div 
-      className="retro-card overflow-hidden"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-    >
-      <div className="px-6 py-4 border-b border-cyan-500/30">
-        <h3 className="text-xl font-semibold text-cyan-400 flex items-center">
-          <BarChart3 className="h-5 w-5 mr-2" />
-          {title}
-        </h3>
-      </div>
+    <div className="retro-card border border-gray-200 p-6">
+      <h3 className="text-lg font-semibold text-blue-600 mb-4 font-mono">{title}</h3>
       <div className="overflow-x-auto">
         <table className="data-table">
           <thead>
-            <tr>
-              <th>Project</th>
-              <th>TVL</th>
-              <th>TVL Change</th>
-              <th>Price</th>
-              <th>Price Change</th>
-              <th>Sentiment</th>
-              <th>News Count</th>
+            <tr className="border-b border-gray-200">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider font-mono">
+                Project
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider font-mono">
+                TVL
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider font-mono">
+                TVL Change
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider font-mono">
+                Price
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider font-mono">
+                Price Change
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider font-mono">
+                Sentiment
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider font-mono">
+                News Count
+              </th>
             </tr>
           </thead>
           <tbody>
             {data.map((row, index) => (
-              <motion.tr 
-                key={index} 
-                className="hover:bg-cyan-500/5 transition-colors"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: index * 0.1 }}
-                whileHover={{ 
-                  scale: 1.01,
-                  backgroundColor: "rgba(0, 255, 255, 0.1)",
-                }}
+              <motion.tr
+                key={index}
+                className="border-b border-gray-100 hover:bg-blue-50 transition-colors font-mono"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                whileHover={{ backgroundColor: 'rgb(239, 246, 255)' }}
               >
-                <td className="font-medium text-white font-mono">{row.project}</td>
-                <td className="font-mono text-cyan-400">{formatCurrency(row.tvl)}</td>
-                <td>
+                <td className="px-4 py-3 text-sm font-medium text-gray-800 font-mono">
+                  {row.project}
+                </td>
+                <td className="px-4 py-3 text-sm text-blue-600 font-mono">
+                  {row.tvl || 'Not Available'}
+                </td>
+                <td className="px-4 py-3 text-sm font-mono">
                   <div className="flex items-center space-x-1">
                     {getChangeIcon(row.tvlChange)}
-                    <span className={`font-mono ${getChangeColor(row.tvlChange)}`}>
-                      {formatPercentage(row.tvlChange)}
+                    <span className={getChangeColor(row.tvlChange)}>
+                      {row.tvlChange || 'Not Available'}
                     </span>
                   </div>
                 </td>
-                <td className="font-mono text-cyan-400">{formatCurrency(row.price)}</td>
-                <td>
+                <td className="px-4 py-3 text-sm text-blue-600 font-mono">
+                  {row.price || 'Not Available'}
+                </td>
+                <td className="px-4 py-3 text-sm font-mono">
                   <div className="flex items-center space-x-1">
                     {getChangeIcon(row.priceChange)}
-                    <span className={`font-mono ${getChangeColor(row.priceChange)}`}>
-                      {formatPercentage(row.priceChange)}
+                    <span className={getChangeColor(row.priceChange)}>
+                      {row.priceChange || 'Not Available'}
                     </span>
                   </div>
                 </td>
-                <td>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium font-mono ${getSentimentColor(row.sentiment)}`}>
-                    {typeof row.sentiment === 'string' 
-                      ? row.sentiment.charAt(0).toUpperCase() + row.sentiment.slice(1).toLowerCase()
-                      : 'Neutral'}
+                <td className="px-4 py-3 text-sm font-mono">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getSentimentColor(row.sentiment)}`}>
+                    {row.sentiment || 'Not Available'}
                   </span>
                 </td>
-                <td className="text-center">
-                  {(typeof row.newsCount === 'number') ? (
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-cyan-400/20 text-cyan-400 text-xs font-medium rounded-full font-mono">
-                      {row.newsCount}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400 text-xs font-mono">
-                      {row.newsCount || 'Not Available'}
-                    </span>
-                  )}
+                <td className="px-4 py-3 text-sm font-mono">
+                  <span className="bg-blue-100 text-blue-600 px-2 py-1 rounded-full text-xs font-medium">
+                    {row.newsCount || 'Not Available'}
+                  </span>
                 </td>
               </motion.tr>
             ))}
           </tbody>
         </table>
       </div>
-    </motion.div>
+    </div>
   );
 }
