@@ -51,7 +51,13 @@ const ResearchResultSchema = z.object({
   sources: z.array(z.string()),
   insights: z.array(z.string()).describe("Key insights and actionable recommendations"),
   riskFactors: z.array(z.string()).describe("Potential risks and concerns"),
-  marketTrends: z.string().describe("Current market trends and patterns")
+  marketTrends: z.string().describe("Current market trends and patterns"),
+  citations: z.array(z.object({
+    id: z.string().describe("Unique identifier for the citation"),
+    text: z.string().describe("The cited text or fact"),
+    source: z.string().describe("Source name (e.g., CoinMarketCap, DeFiLlama)"),
+    url: z.string().optional().describe("Optional URL to the source")
+  })).optional().describe("Citations for specific facts or data points")
 });
 
 // Create output parsers
@@ -60,7 +66,7 @@ const researchResultParser = StructuredOutputParser.fromZodSchema(ResearchResult
 
 // Custom simplified format instructions to avoid model echoing entire JSON schema with fences
 function getResearchFormatInstructions(): string {
-  return `Return ONLY compact valid JSON with the following structure (no markdown, no code fences):\n{\n  "summary": string,\n  "dataTable": optional array of up to 10 rows: [{"project": string, "tvl": string, "tvlChange": string, "price": string, "priceChange": string, "sentiment": string, "newsCount": number|string}],\n  "sources": string[],\n  "insights": string[],\n  "riskFactors": string[],\n  "marketTrends": string\n}\nNo extra keys.`;
+  return `Return ONLY compact valid JSON with the following structure (no markdown, no code fences):\n{\n  "summary": string,\n  "dataTable": optional array of up to 10 rows: [{"project": string, "tvl": string, "tvlChange": string, "price": string, "priceChange": string, "sentiment": string, "newsCount": number|string}],\n  "sources": string[],\n  "insights": string[],\n  "riskFactors": string[],\n  "marketTrends": string,\n  "citations": optional array of citation objects: [{"id": string, "text": string, "source": string, "url": string}]\n}\nNo extra keys.`;
 }
 
 // Helper to extract the last JSON object from messy LLM output containing code fences / schema echoes
@@ -143,6 +149,11 @@ Content guidance:
 - riskFactors: distinct risks (max 8)
 - marketTrends: 1-3 sentences on directional context
 - sources: list actual data sources you used among: Crypto Market Data, DeFiLlama, Etherscan, Dune Analytics
+- citations: for each important fact or data point, provide a citation with:
+  * id: a unique identifier (e.g., "cit1", "cit2")
+  * text: the specific text or fact being cited
+  * source: which data source provided this information
+  * url: if available, a URL to access more information (use SOURCE_LINKS values)
 `);
 
 // Chain for analyzing API requirements
@@ -322,7 +333,15 @@ export async function analyzeWithLangChain(
           sources: ['DeFiLlama'],
           insights: fallbackTable.slice(0,3).map(r=>`${r.project} shows ${r.tvlChange} TVL change.`),
           riskFactors: ['Model timeout – AI narrative limited','Data may exclude smaller protocols'],
-          marketTrends: 'DeFi sector snapshot generated locally'
+          marketTrends: 'DeFi sector snapshot generated locally',
+          citations: [
+            {
+              id: 'cit1',
+              text: `Top DeFi protocols by TVL: ${topNames}`,
+              source: 'DeFiLlama',
+              url: 'https://defillama.com/'
+            }
+          ]
         };
       } else {
         console.error('Parsing error, attempting structured fallback extraction');
@@ -358,6 +377,7 @@ export async function analyzeWithLangChain(
       insights: result.insights,
       riskFactors: result.riskFactors,
       marketTrends: result.marketTrends,
+      citations: result.citations || [],
     };
 
     console.log('✅ LangChain analysis completed successfully');
@@ -421,6 +441,14 @@ export async function analyzeWithLangChain(
         insights: ['LangChain integration encountered an error'],
         riskFactors: ['Use standard mode for more reliable responses'],
         marketTrends: 'Unable to complete analysis with current setup',
+        citations: [
+          {
+            id: 'cit1',
+            text: 'Analysis encountered an error during processing.',
+            source: 'System',
+            url: undefined
+          }
+        ]
       };
     }
   }

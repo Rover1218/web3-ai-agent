@@ -11,11 +11,19 @@ interface ResearchResultsProps {
 
 const SOURCE_LINKS = {
   'CoinMarketCap': 'https://coinmarketcap.com/',
+  'CoinGecko': 'https://coingecko.com/',
   'DeFiLlama': 'https://defillama.com/',
   'Dune Analytics': 'https://dune.com/',
   'Etherscan': 'https://etherscan.io/',
   'Groq AI': 'https://groq.com/',
-  'LangChain': 'https://langchain.com/'
+  'LangChain': 'https://langchain.com/',
+  'Binance': 'https://binance.com/',
+  'Uniswap': 'https://uniswap.org/',
+  'Messari': 'https://messari.io/',
+  'CoinDesk': 'https://coindesk.com/',
+  'The Block': 'https://www.theblock.co/',
+  'Nansen': 'https://www.nansen.ai/',
+  'Token Terminal': 'https://tokenterminal.com/'
 };
 
 export default function ResearchResults({ result }: ResearchResultsProps) {
@@ -39,6 +47,38 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
   const safeInsights = (result.insights || []).map(normalizeEntry).filter(Boolean);
   const safeRisks = (result.riskFactors || []).map(normalizeEntry).filter(Boolean);
   const safeMarketTrends = normalizeEntry(result.marketTrends);
+  const safeCitations = result.citations || [];
+
+  // Function to replace citation references in text with superscript links
+  const formatTextWithCitations = (text: string) => {
+    if (!safeCitations || safeCitations.length === 0) return text;
+    
+    // Create a map for quick lookup of citations by id
+    const citationMap = new Map(safeCitations.map(citation => [citation.id, citation]));
+    
+    // Regular expression to find citation references like [cit1], [cit2], etc.
+    const citationRegex = /\[(cit\d+)\]/g;
+    
+    // Replace each citation reference with a superscript number
+    let formattedText = text;
+    const citationRefs: string[] = [];
+    
+    formattedText = formattedText.replace(citationRegex, (match, citId) => {
+      const citation = citationMap.get(citId);
+      if (citation) {
+        const index = citationRefs.indexOf(citId) + 1;
+        if (index === 0) {
+          citationRefs.push(citId);
+          return `<sup class="text-blue-600 cursor-pointer" data-citation="${citId}">[${citationRefs.length}]</sup>`;
+        } else {
+          return `<sup class="text-blue-600 cursor-pointer" data-citation="${citId}">[${index}]</sup>`;
+        }
+      }
+      return match;
+    });
+    
+    return formattedText;
+  };
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
@@ -57,7 +97,8 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
           </span>
         </div>
         <div className="prose prose-gray max-w-none">
-          <p className="text-gray-700 leading-relaxed font-mono">{safeSummary}</p>
+          <p className="text-gray-700 leading-relaxed font-mono" 
+             dangerouslySetInnerHTML={{ __html: formatTextWithCitations(safeSummary) }} />
         </div>
       </motion.div>
 
@@ -78,7 +119,8 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
             {safeInsights.map((insight, index) => (
               <li key={index} className="flex items-start space-x-3">
                 <span className="text-green-600 mt-1 font-bold">•</span>
-                <span className="text-gray-700 leading-relaxed font-mono">{insight}</span>
+                <span className="text-gray-700 leading-relaxed font-mono" 
+                      dangerouslySetInnerHTML={{ __html: formatTextWithCitations(insight) }} />
               </li>
             ))}
           </ul>
@@ -102,7 +144,8 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
             {safeRisks.map((risk, index) => (
               <li key={index} className="flex items-start space-x-3">
                 <span className="text-red-600 mt-1 font-bold">⚠</span>
-                <span className="text-gray-700 leading-relaxed font-mono">{risk}</span>
+                <span className="text-gray-700 leading-relaxed font-mono"
+                      dangerouslySetInnerHTML={{ __html: formatTextWithCitations(risk) }} />
               </li>
             ))}
           </ul>
@@ -122,7 +165,8 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
               Market Trends & Patterns
             </h3>
           </div>
-          <p className="text-gray-700 leading-relaxed font-mono">{safeMarketTrends}</p>
+          <p className="text-gray-700 leading-relaxed font-mono"
+             dangerouslySetInnerHTML={{ __html: formatTextWithCitations(safeMarketTrends) }} />
         </motion.div>
       )}
 
@@ -164,6 +208,45 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
           ))}
         </div>
       </motion.div>
+
+      {/* Citations */}
+      {safeCitations && safeCitations.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="retro-card border border-gray-200 p-6"
+        >
+          <h3 className="text-lg font-semibold text-gray-800 mb-4 border-b border-gray-200 pb-2 font-mono">
+            Citations
+          </h3>
+          <div className="space-y-4">
+            {safeCitations.map((citation, index) => (
+              <div key={citation.id} className="border-b border-gray-100 pb-3 last:border-b-0">
+                <div className="flex items-start">
+                  <span className="text-blue-600 font-mono mr-2">[{index + 1}]</span>
+                  <div>
+                    <p className="text-gray-700 font-mono">{citation.text}</p>
+                    <div className="flex items-center mt-1 text-sm text-gray-600">
+                      <span className="font-mono mr-2">Source: {citation.source}</span>
+                      {citation.url && (
+                        <a 
+                          href={citation.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline flex items-center"
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          Link
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* DeFi Projects */}
       {result.showDeFi && result.data.defiProjects && result.data.defiProjects.length > 0 && (

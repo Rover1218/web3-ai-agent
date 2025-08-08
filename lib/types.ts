@@ -127,6 +127,13 @@ export interface ResearchResult {
   riskFactors?: string[];
   marketTrends?: string;
   conversationId?: string;
+  // Citation fields
+  citations?: {
+    id: string;
+    text: string;
+    source: string;
+    url?: string;
+  }[];
 }
 
 export interface DataTableRow {
