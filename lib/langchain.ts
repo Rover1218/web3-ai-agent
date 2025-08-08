@@ -289,35 +289,59 @@ export async function analyzeWithLangChain(
     const data = await fetchRequiredData(apiRequirements);
     console.log('📊 Fetched data structure:', Object.keys(data));
 
+    // Slim data before sending to model to reduce latency / token usage
+    if (data.defiProjects) {
+      data.defiProjects = [...data.defiProjects]
+        .sort((a: any,b: any)=> (b.tvl||0) - (a.tvl||0))
+        .slice(0, 20); // cap
+    }
+    if (data.cryptoData) {
+      data.cryptoData = [...data.cryptoData]
+        .sort((a: any,b: any)=> (b.marketCap||0) - (a.marketCap||0))
+        .slice(0, 15);
+    }
+
     // Step 3: Perform final analysis with timeout
     console.log('🧠 Performing final analysis...');
     let result;
+    const MODEL_TIMEOUT_MS = 20000; // tighten from 30s to 20s
     try {
       result = await Promise.race([
         researchChain.invoke({ query, data }),
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Final analysis timeout')), 30000)
-        )
+        new Promise<never>((_, reject) => setTimeout(()=>reject(new Error('Final analysis timeout')), MODEL_TIMEOUT_MS))
       ]) as any;
     } catch (parseError: any) {
-      console.error('Parsing error, attempting structured fallback extraction');
-      // 1. Try llmOutput if available
-      const raw = parseError?.llmOutput || parseError?.output || '';
-      let extracted = extractLastJsonObject(raw);
-      if (!extracted) {
-        // 2. Try a lightweight re-ask with stricter instructions
-        try {
-          const retry = await model.invoke([
-            ['system', 'Output ONLY a single valid minified JSON object meeting the specified keys. No markdown.'],
-            ['human', `Query: ${query}\nData: ${JSON.stringify(data)}\nKeys: summary,dataTable,sources,insights,riskFactors,marketTrends`]
-          ]);
-          extracted = extractLastJsonObject(retry.content as string);
-        } catch (retryErr) {
-          console.error('Retry invoke failed:', retryErr);
+      if (parseError?.message === 'Final analysis timeout') {
+        console.warn('⚠️ LangChain model timeout – generating fast local fallback');
+        const fallbackTable = buildLocalTableFromDeFi(data.defiProjects || []);
+        const topNames = fallbackTable.slice(0,5).map(r=>r.project).join(', ');
+        const summary = `Top DeFi protocols by TVL: ${topNames}. (Local fallback summary due to model timeout)`;
+        result = {
+          summary,
+          dataTable: fallbackTable,
+          sources: ['DeFiLlama'],
+          insights: fallbackTable.slice(0,3).map(r=>`${r.project} shows ${r.tvlChange} TVL change.`),
+          riskFactors: ['Model timeout – AI narrative limited','Data may exclude smaller protocols'],
+          marketTrends: 'DeFi sector snapshot generated locally'
+        };
+      } else {
+        console.error('Parsing error, attempting structured fallback extraction');
+        const raw = parseError?.llmOutput || parseError?.output || '';
+        let extracted = extractLastJsonObject(raw);
+        if (!extracted) {
+          try {
+            const retry = await model.invoke([
+              ['system', 'Output ONLY a single valid minified JSON object meeting the specified keys. No markdown.'],
+              ['human', `Query: ${query}\nData: ${JSON.stringify(data)}\nKeys: summary,dataTable,sources,insights,riskFactors,marketTrends`]
+            ]);
+            extracted = extractLastJsonObject(retry.content as string);
+          } catch (retryErr) {
+            console.error('Retry invoke failed:', retryErr);
+          }
         }
+        if (!extracted) throw parseError;
+        result = extracted;
       }
-      if (!extracted) throw parseError;
-      result = extracted;
     }
 
     // Step 4: Format the response
@@ -400,6 +424,22 @@ export async function analyzeWithLangChain(
       };
     }
   }
+}
+
+// Build a lightweight table from DeFi projects without model assistance
+function buildLocalTableFromDeFi(defiProjects: any[]): DataTableRow[] {
+  return [...defiProjects]
+    .sort((a,b)=> (b.tvl||0)-(a.tvl||0))
+    .slice(0,10)
+    .map(p => ({
+      project: p.name,
+      tvl: p.tvl ? `$${(p.tvl/1e9).toFixed(2)}B` : 'N/A',
+      tvlChange: typeof p.tvlChange24h === 'number' ? `${p.tvlChange24h>=0?'+':''}${p.tvlChange24h.toFixed(2)}%` : '0%',
+      price: 'N/A',
+      priceChange: 'N/A',
+      sentiment: p.tvlChange24h > 2 ? 'Positive' : p.tvlChange24h < -2 ? 'Negative' : 'Neutral',
+      newsCount: 0
+    }));
 }
 
 // Memory and conversation management

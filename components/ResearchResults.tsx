@@ -19,6 +19,27 @@ const SOURCE_LINKS = {
 };
 
 export default function ResearchResults({ result }: ResearchResultsProps) {
+  // Normalize any accidental object-based entries (e.g., {title, description}) to strings to avoid React child errors
+  const normalizeEntry = (val: any): string => {
+    if (val == null) return '';
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number') return String(val);
+    if (Array.isArray(val)) return val.map(normalizeEntry).join(' ');
+    if (typeof val === 'object') {
+      // Common LLM pattern: { title, description }
+      const title = 'title' in val ? val.title : '';
+      const desc = 'description' in val ? val.description : '';
+      const text = [title, desc].filter(Boolean).join(': ');
+      return text || JSON.stringify(val);
+    }
+    return String(val);
+  };
+
+  const safeSummary = normalizeEntry(result.summary);
+  const safeInsights = (result.insights || []).map(normalizeEntry).filter(Boolean);
+  const safeRisks = (result.riskFactors || []).map(normalizeEntry).filter(Boolean);
+  const safeMarketTrends = normalizeEntry(result.marketTrends);
+
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
       {/* Summary Card */}
@@ -36,12 +57,12 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
           </span>
         </div>
         <div className="prose prose-gray max-w-none">
-          <p className="text-gray-700 leading-relaxed font-mono">{result.summary}</p>
+          <p className="text-gray-700 leading-relaxed font-mono">{safeSummary}</p>
         </div>
       </motion.div>
 
       {/* LangChain Insights */}
-      {result.insights && result.insights.length > 0 && (
+  {safeInsights.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -54,7 +75,7 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
             </h3>
           </div>
           <ul className="space-y-3">
-            {result.insights.map((insight, index) => (
+            {safeInsights.map((insight, index) => (
               <li key={index} className="flex items-start space-x-3">
                 <span className="text-green-600 mt-1 font-bold">•</span>
                 <span className="text-gray-700 leading-relaxed font-mono">{insight}</span>
@@ -65,7 +86,7 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
       )}
 
       {/* Risk Factors */}
-      {result.riskFactors && result.riskFactors.length > 0 && (
+  {safeRisks.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -78,7 +99,7 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
             </h3>
           </div>
           <ul className="space-y-3">
-            {result.riskFactors.map((risk, index) => (
+            {safeRisks.map((risk, index) => (
               <li key={index} className="flex items-start space-x-3">
                 <span className="text-red-600 mt-1 font-bold">⚠</span>
                 <span className="text-gray-700 leading-relaxed font-mono">{risk}</span>
@@ -89,7 +110,7 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
       )}
 
       {/* Market Trends */}
-      {result.marketTrends && (
+  {safeMarketTrends && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -101,7 +122,7 @@ export default function ResearchResults({ result }: ResearchResultsProps) {
               Market Trends & Patterns
             </h3>
           </div>
-          <p className="text-gray-700 leading-relaxed font-mono">{result.marketTrends}</p>
+          <p className="text-gray-700 leading-relaxed font-mono">{safeMarketTrends}</p>
         </motion.div>
       )}
 
