@@ -6,56 +6,67 @@ const conversations = new Map<string, ConversationMemory>();
 
 export async function POST(request: NextRequest) {
   try {
-    const { query, mode = 'research', conversationId } = await request.json();
+    const { query, sources = ['langchain'], mode = 'research', conversationId } = await request.json();
 
     if (!query || typeof query !== 'string') {
-      return NextResponse.json({
-        success: false,
-        error: 'Query is required and must be a string'
-      }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Query is required and must be a string' }, { status: 400 });
     }
 
-    // Get or create conversation memory
-    let conversation: ConversationMemory;
-    if (conversationId && conversations.has(conversationId)) {
-      conversation = conversations.get(conversationId)!;
-    } else {
-      const newConversationId = Date.now().toString(36) + Math.random().toString(36).substring(2);
-      conversation = new ConversationMemory();
-      conversations.set(newConversationId, conversation);
+    // Define runners for each source
+    const runners: Record<string, () => Promise<any>> = {
+      langchain: async () => {
+        // Get or create conversation memory
+        let conversation: ConversationMemory;
+        let newConversationId = conversationId;
+        if (conversationId && conversations.has(conversationId)) {
+          conversation = conversations.get(conversationId)!;
+        } else {
+          newConversationId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+          conversation = new ConversationMemory();
+          conversations.set(newConversationId, conversation);
+        }
+        conversation.addMessage('user', query);
+        const result = await analyzeWithLangChain(query, mode);
+        conversation.addMessage('assistant', result.summary);
+        result.conversationId = newConversationId;
+        return result;
+      },
+      // Add other sources if needed
+    };
+
+    // Run all sources in parallel
+    const results = await Promise.all(
+      sources.map(async (source: string) => {
+        try {
+          const result = await runners[source]();
+          return { source, result };
+        } catch (error) {
+          return { source, error: error instanceof Error ? error.message : String(error) };
+        }
+      })
+    );
+
+    // Choose primary successful result (prefer langchain)
+    const primary = results.find(r => r.source === 'langchain' && !('error' in r))
+      || results.find(r => !('error' in r));
+
+    // Optional formatted debug output (kept for troubleshooting)
+    const formatted = results.map(r =>
+      'error' in r && r.error
+        ? `Source: ${r.source}\nError: ${r.error}`
+        : `Source: ${r.source}\nResult: ${JSON.stringify((r as any).result, null, 2)}`
+    ).join('\n\n');
+
+    if (primary && 'result' in primary) {
+      const data = (primary as any).result;
+      // Return backward-compatible shape expected by the UI
+      return NextResponse.json({ success: true, data, conversationId, debug: { output: formatted, sourcesTried: results.map(r=>r.source) } });
     }
 
-    // Add user message to conversation
-    conversation.addMessage('user', query);
-
-    console.log('🤖 Starting LangChain analysis for query:', query);
-
-    // Analyze with LangChain (this will intelligently fetch required data)
-    const result = await analyzeWithLangChain(query, mode);
-
-    // Add assistant response to conversation
-    conversation.addMessage('assistant', result.summary);
-
-    // Add conversation context to result
-    result.conversationId = conversationId || Array.from(conversations.keys()).pop()!;
-
-    console.log('✅ LangChain analysis completed successfully');
-
-    return NextResponse.json({
-      success: true,
-      data: result,
-      conversationId: conversationId,
-      message: 'Analysis completed using LangChain with fallback method'
-    });
-
+    // If no source succeeded
+    return NextResponse.json({ success: false, error: 'All sources failed', results }, { status: 502 });
   } catch (error) {
-    console.error('LangChain API error:', error);
-    
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
-      message: 'LangChain analysis failed, try using standard mode'
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 });
   }
 }
 

@@ -23,7 +23,9 @@ export default function Home() {
     setIsUsingFallback(false);
 
     try {
-      const endpoint = isUsingLangChain ? '/api/analyze-langchain' : '/api/analyze';
+      const endpoint = mode === 'chat'
+        ? '/api/chat'
+        : (isUsingLangChain ? '/api/analyze-langchain' : '/api/analyze');
       
       // Add timeout to the fetch request
       const controller = new AbortController();
@@ -46,13 +48,29 @@ export default function Home() {
       const result = await response.json();
 
       if (result.success) {
-        setResult(result.data);
-        if (result.conversationId) {
-          setConversationId(result.conversationId);
-        }
-        // Check if fallback was used
-        if (result.message && result.message.includes('fallback')) {
-          setIsUsingFallback(true);
+        if (mode === 'chat') {
+          // Normalize chat response into ResearchResult shape for UI rendering
+          const normalized: ResearchResult = {
+            summary: result.summary || 'No response',
+            data: {},
+            dataTable: [],
+            sources: ['Direct AI Response'],
+            timestamp: result.timestamp || new Date().toISOString(),
+            showDeFi: false,
+            showTable: false,
+            showEtherscan: false,
+            isCryptoQuery: true,
+          };
+          setResult(normalized);
+        } else {
+          setResult(result.data);
+          if (result.conversationId) {
+            setConversationId(result.conversationId);
+          }
+          // Check if fallback was used
+          if (result.message && result.message.includes('fallback')) {
+            setIsUsingFallback(true);
+          }
         }
       } else {
         setError(result.error || 'Analysis failed');

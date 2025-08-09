@@ -4,38 +4,59 @@ import { fetchAllData } from '@/lib/api';
 
 export async function POST(request: NextRequest) {
   try {
-    const { query, mode = 'research' } = await request.json();
+    const { query, sources = ['groq', 'langchain'] } = await request.json();
 
     if (!query || typeof query !== 'string') {
-      return NextResponse.json({
-        success: false,
-        error: 'Query is required and must be a string'
-      }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Query is required and must be a string' }, { status: 400 });
     }
 
-    console.log('🔄 Starting analysis for query:', query);
+    // Define runners for each source
+    const runners: Record<string, () => Promise<any>> = {
+      groq: async () => {
+        const data = await fetchAllData(query);
+        return await analyzeCryptoData(query, data);
+      },
+      langchain: async () => {
+        // Import and use analyzeWithLangChain if available
+        try {
+          const { analyzeWithLangChain } = await import('@/lib/langchain');
+          return await analyzeWithLangChain(query);
+        } catch (e) {
+          throw new Error('LangChain source not available');
+        }
+      },
+    };
 
-    // Fetch all data using the original method
-    const data = await fetchAllData(query);
+    // Run all sources in parallel
+    const results = await Promise.all(
+      sources.map(async (source: string) => {
+        try {
+          const result = await runners[source]();
+          return { source, result };
+        } catch (error) {
+          return { source, error: error instanceof Error ? error.message : String(error) };
+        }
+      })
+    );
 
-    // Analyze using the original Groq method
-    const result = await analyzeCryptoData(query, data);
+    // Choose primary successful result (prefer groq)
+    const primary = results.find(r => r.source === 'groq' && !('error' in r))
+      || results.find(r => !('error' in r));
 
-    console.log('✅ Analysis completed successfully');
+    // Optional formatted debug output (kept for troubleshooting)
+    const formatted = results.map(r =>
+      'error' in r && r.error
+        ? `Source: ${r.source}\nError: ${r.error}`
+        : `Source: ${r.source}\nResult: ${JSON.stringify((r as any).result, null, 2)}`
+    ).join('\n\n');
 
-    return NextResponse.json({
-      success: true,
-      data: result,
-      message: 'Analysis completed using standard method'
-    });
+    if (primary && 'result' in primary) {
+      const data = (primary as any).result;
+      return NextResponse.json({ success: true, data, debug: { output: formatted, sourcesTried: results.map(r=>r.source) } });
+    }
 
+    return NextResponse.json({ success: false, error: 'All sources failed', results }, { status: 502 });
   } catch (error) {
-    console.error('Analysis API error:', error);
-    
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
-      message: 'Failed to analyze query'
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 });
   }
 }

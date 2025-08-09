@@ -89,14 +89,9 @@ export async function POST(request: NextRequest) {
         console.log(`Successfully used model: ${model}`);
         return NextResponse.json({
           success: true,
-          data: {
-            summary: response,
-            // Minimal structure to be compatible with existing frontend
-            dataTable: [],
-            sources: ['Direct AI Response'],
-            modelUsed: model, // Include which model was used
-            timestamp: new Date().toISOString() // Add proper timestamp
-          },
+          summary: response,
+          modelUsed: model,
+          timestamp: new Date().toISOString()
         });
       } catch (err: any) {
         console.error(`Error with model ${model}:`, err);

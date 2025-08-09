@@ -1,4 +1,4 @@
-// File: C:\Users\Windows\Desktop\web3 ai agent\app\layout.tsx
+// File: C:\Users\Windows\Desktop\Rover\projects\web3 ai agent\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
