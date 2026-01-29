@@ -1,0 +1,11 @@
+var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/research/route.js")
+R.c("server/chunks/[root-of-the-server]__fca66cc0._.js")
+R.c("server/chunks/node_modules_71fcbfac._.js")
+R.c("server/chunks/lib_groq_ts_eccb04d0._.js")
+R.c("server/chunks/[root-of-the-server]__521f1b26._.js")
+R.c("server/chunks/[root-of-the-server]__f408c708._.js")
+R.c("server/chunks/[root-of-the-server]__0d936b9c._.js")
+R.c("server/chunks/node_modules_formdata-node_lib_esm_File_ccf0a600.js")
+R.c("server/chunks/_next-internal_server_app_api_research_route_actions_846749eb.js")
+R.m(42461)
+module.exports=R.m(42461).exports

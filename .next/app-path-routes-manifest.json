@@ -1,0 +1,9 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/analyze-langchain/route": "/api/analyze-langchain",
+  "/api/analyze/route": "/api/analyze",
+  "/api/chat/route": "/api/chat",
+  "/api/research/route": "/api/research",
+  "/page": "/"
+}

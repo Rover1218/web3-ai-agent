@@ -1,0 +1,3 @@
+{
+  "/api/analyze-langchain/route": "app/api/analyze-langchain/route.js"
+}
