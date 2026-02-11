@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@langchain/community": "^1.1.9",
+    "@langchain/community": "^1.1.14",
     "@langchain/core": "^1.1.17",
     "@langchain/groq": "^1.0.3",
     "@types/node": "^20",
